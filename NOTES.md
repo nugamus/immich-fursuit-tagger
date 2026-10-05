@@ -200,3 +200,24 @@ Problems found on the real library, and their fixes:
 4. Founding with `CLUSTER_EPS=0.20` found two more real suits (an orange fox and a green/brown one) but also built a 27-crop junk cluster of back-of-head shots. The default stays at 0.15, and `CLUSTER_EPS` remains configurable.
 
 Final defaults on the real library: 7 characters (husky 255, teal deer 114, purple 96, plus 7, 5, 4 and 4 crops). No photo has a character twice. 39–50 heads stay pending (other suits, geese, back-of-head shots). Reviewing the 36 lowest-quality crops of each character found about 2 wrong crops in the purple suit; the rest were correct or ambiguous back/side views. Mistakes cluster in low-quality crops, and deleting a face in Immich will mark it rejected for good (M4).
+
+## M3 review round 2 (user feedback, 2026-10-05)
+
+The user labelled specific crops. Detection IDs refer to the dry-run DB:
+- 444 and 446 belong to the husky but were in the purple suit. 444 was a **bug**: the 2-means split can strand a point with no neighbour on its side (distance 0.272). Fix: re-run DBSCAN inside each split cluster (`split_conflicts(..., eps)`); stranded points become noise. Both now land in the husky.
+- 181, 184 and 185 are husky side views at 0.24–0.28. They stayed pending because they were "low quality" (0.47–0.55) and therefore couldn't be references, even though their 6–8 burst siblings are 0.03 apart. Fix: `REF_QUALITY_MIN` 0.5 → 0.3 and `REF_SCORE_MIN` 0.8 → 0.7. All 8 crops that newly joined the husky are correct, and none left any character.
+- Geese and ducks (score ≤ 0.64) and one human face (0.59) remain unable to found a character. The report now collapses pending heads further than 0.5 from every character into "Probably not a fursuit".
+- Characters #2 and #7 are the same suit: back views against front views. No safe automatic merge signal was found; #6/#7 has the same profile (never in one photo, 0.23 apart) and those are different suits. The user merges in Immich, and M5 must follow merges.
+- 240 and 244 (belonging to #6) are still pending: 0.24 from #6, but #6 has only 4 references.
+- Tried and rejected:
+  - **Flip test-time augmentation:** no measurable gain, at 2× the embedding cost.
+  - **Relative (margin) assignment:** 12/15 correct, but it assigns unseen suits to the nearest character.
+  - **Pending-neighbour open-set check:** known side views form tight pending groups just like unseen suits do.
+- Design principle from this round: **over-split rather than over-merge.** An extra person costs one merge click; a wrong merge is painful to undo.
+
+## Immich human people (same day)
+
+On fursuit photos, buffalo_l found mostly tiny background faces (median width 2–7% of the frame). The result was 16 unnamed people, the same person split several times, and blurry thumbnails.
+- System config change: `minScore` 0.7 → 0.8 and `maxDistance` 0.5 → 0.55, followed by forced face detection and recognition. That gave 6 people.
+- `tagger people` (new, opt-in): sets each person's featured face to their largest face, unless the user changed it (tracked via the person's `updatedAt`). `--hide-below-pct 4` hides people whose largest face is under 4% of the photo width (1 person hidden). `--share` re-applies `PUT /people/users {type: everyone}`, because Immich's "everyone" share is a snapshot.
+- Result: 4 visible people, all with sharp thumbnails, and shared with Nugamus.
