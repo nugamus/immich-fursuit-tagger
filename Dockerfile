@@ -29,5 +29,7 @@ RUN if [ "$ORT_EXTRA" = "openvino" ]; then \
       && apt-get remove -y wget && rm -rf /var/lib/apt/lists/*; fi
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev --no-install-project --extra "$ORT_EXTRA"
 COPY tagger ./tagger
+# Unhealthy when no pass succeeded recently or the version guard forced read-only. The first full scan can be long.
+HEALTHCHECK --interval=5m --timeout=30s --start-period=60m CMD ["python", "-m", "tagger", "health"]
 ENTRYPOINT ["python", "-m", "tagger"]
 CMD ["run"]

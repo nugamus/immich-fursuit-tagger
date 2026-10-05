@@ -228,3 +228,21 @@ On fursuit photos, buffalo_l found mostly tiny background faces (median width 2�
 - 275, 278 and 284 (the same suit from the side) are about 0.2 from the *husky* and 0.25–0.37 from #6's other views; the model genuinely confuses that view. A looser "same session, relative" rule sent them to the husky, so it was rejected. `CLUSTER_EPS` 0.15 → 0.17 founds them as their own 3-crop character, which the user then merges. 0.17 forms no junk cluster (0.20 did).
 - #2 (husky from behind) has no clean automatic merge signal. Time continuity gave 3 of 5 #2 shots within 5 s of a husky shot, but also 2 of 7 for two genuinely different suits. Left to the user's merge in Immich.
 - Final: 8 characters, of which 2 are expected user merges (#2 into the husky, the 3-crop side group into #6). 0 same-photo duplicates. 45 heads pending.
+
+# M4 Writer (2026-10-05)
+
+`tagger run` is the loop: scan, version guard, write pass, optional people housekeeping, then sleep for `SCAN_INTERVAL_MIN`. `tagger write` runs one pass, `undo [--since] [--user] [--dry-run]` removes what the tagger created, `resume` clears the pause, `status` prints counts, and `health` backs the Docker HEALTHCHECK.
+
+- **People:** one person group per character, created by the configured user who owns most of its photos and shared with all other configured users through `PUT /people/users` (role `write`). It is created unnamed, and the user names it in Immich.
+- **Faces:** `POST /faces` with the asset owner's key, in preview coordinates. These are edited-preview coordinates for edited assets, which is what `createFace` expects. The new face ID is found by diffing `GET /faces` before and after. A face is skipped (`skip_reason = 'overlap'`) if it overlaps a face the tagger didn't create with IoU > `OVERLAP_IOU`.
+- **Tags:** the `TAG_NAME` tag is upserted per user. The tagger records whether it created the tag, so `undo` deletes only tags it made.
+- **Thumbnails:** per user, the best-quality written face that user can see. If the person's `updatedAt` changes without a name change, the user picked a thumbnail, so `thumbnail_locked` is set for that user only. Gotcha: PUT returns `updatedAt` as `...812Z`, while GET returns `...799867+00:00`, so the comparison must use a fresh GET. Without that, every person locked after our own update.
+- **User deletes a tagger face:** the detection becomes `rejected` permanently. Rejected and written detections survive re-detection, and new boxes overlapping them (IoU > 0.5) are dropped.
+- **Change detection uses `thumbhash|isEdited`, not `updatedAt`.** Our own faces and tags bump `updatedAt`, which caused a full re-detect after every write.
+- **Version guard:** requires Immich ≥ 3.3.0-rc.2 and < 4, every key holding the required scopes, and all users in one cluster group. Otherwise the tagger stays read-only, logs `READ-ONLY`, and health turns unhealthy.
+
+Sandbox test (users tagger-test-a and tagger-test-b, 16 Commons photos, an album shared from A to B):
+- 1 person and 10 faces written. A sees 10 photos, B sees the 4 shared ones, and both see the labelled face on A's photo. 10 photos tagged.
+- The second and third passes were no-ops.
+- A deleted a face: it became a rejection and was not recreated. B renamed the person: A sees the new name, and neither user's thumbnail locked. A picked a thumbnail: only A locked.
+- `undo` removed 9 faces, 1 person, the tag on 10 photos and the tag itself, then paused. `resume` followed by `run` recreated everything except the rejected face.
