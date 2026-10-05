@@ -170,9 +170,26 @@ Still open: merge semantics across shared persons (`POST /people/merge`). This g
 - Embedder ONNX: `pixel_values` (batch, 3, 512, 512) maps to `embedding` (batch, 512), L2-normalized.
 - Parity on 16 CC-licensed Wikimedia Commons fursuit photos (`work/samples`, not committed): detector worst IoU **0.9999** over 17 boxes, score diff 0.0000; embedder worst cosine **1.00000**.
 
-# M2 Runtime + bench (in progress)
+# M2 Runtime + bench (2026-10-05)
 
-- `tagger/runtime.py`: `INFERENCE_DEVICE=auto` picks cuda, then rocm (MIGraphX), then openvino, then cpu. OpenVINO uses GPU/FP16 when `/dev/dri` exists. Sessions load lazily and are released by `release_if_idle()` after `MODEL_TTL_MIN`.
-- `python -m tagger bench`, desktop CPU, 3 threads: detection 431 ms per 1920-px image; embedding 345 ms per crop.
-- CI pushes `ghcr.io/nugamus/immich-fursuit-tagger:{cpu,openvino,cuda,exporter}`. The OpenVINO image installs Intel's OpenCL runtime debs (same versions as Immich's ML image), because Debian trixie no longer packages them.
-- Still to do: run the bench on the N100 with CPU and with OpenVINO GPU.
+- `tagger/runtime.py`: `INFERENCE_DEVICE=auto` picks cuda, then rocm (MIGraphX), then openvino, then cpu. OpenVINO uses GPU/FP16 when `/dev/dri` exists, with a compile cache in `OV_CACHE_DIR` (default `/data/ov_cache`). Sessions load lazily and are released by `release_if_idle()` after `MODEL_TTL_MIN`.
+- CI pushes `ghcr.io/nugamus/immich-fursuit-tagger:{cpu,openvino,cuda,exporter}` (public) plus `<flavor>-<sha>` tags. The OpenVINO image installs Intel's OpenCL runtime debs (same versions as Immich's ML image), because Debian trixie no longer packages them.
+- **OpenVINO GPU cannot compile the dynamic-batch embedder** (`rank().is_static()`), so the embedder is exported with static batch 1 (`EMBEDDER_EXPORT_VERSION=2`). Detector and embedder export versions are independent, so this triggered re-embedding only.
+- **ZimaOS adds `cpus: "1.00"` to every container in a custom app.** The compose files must raise it for the tagger.
+
+`tagger bench` with 10 synthetic 1920×1440 previews, on the N100 under ZimaOS:
+
+| Device | Detect per photo | Embed per head | Session load | Peak RSS |
+|---|---|---|---|---|
+| CPU EP, 1-CPU limit (ZimaOS default) | 6.2 s | 4.9 s | 2.6 s + 6.1 s | 1.2 GB |
+| CPU EP, 3 CPUs | 1.25 s | 1.15 s | 0.5 s + 0.4 s | 750 MB |
+| OpenVINO iGPU FP16, cold | 0.43 s | 0.31 s | 10.1 s + 4.1 s (compile) | 960 MB |
+| OpenVINO iGPU FP16, cached | **0.42 s** | **0.31 s** | **0.5 s + 0.3 s** | 610 MB |
+
+That works out to about 1 s per photo with one head on the iGPU, or about 10 minutes for a 600-photo library. Still to check: that FP16 on the GPU doesn't shift embeddings (compare against CPU during the M3 dry run).
+
+# M3 Dry run (in progress)
+
+- `tagger scan --once [--album ID] [--limit N]` runs the per-user access scan, detection, quality scoring, embedding and recognition (gallery k-NN, then clustering of the pending pool, then burst context). `tagger report --out report.html` writes a self-contained HTML report with a distance histogram. No Immich writes.
+- Smoke test against the test users: 16 CC Commons fursuit photos plus 6 synthetic photos. Results: 15 heads; one character, 10 crops of the same suit, at intra-cluster distances 0.03–0.13. Five pending: other suits, and two back-of-head views of the same suit at 0.47–0.48. Every non-match was at 0.24 or more, so 0.15 sits in a clear gap. A second scan processed 0 assets (idempotent).
+- Quality scores came out at 0.87–0.96 on these sharp Commons photos. Calibrate `REF_QUALITY_MIN` on the real library.

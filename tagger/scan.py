@@ -192,13 +192,17 @@ def _cluster_pass(db: sqlite3.Connection, cfg: Config) -> int:
                       "AND embedding IS NOT NULL").fetchall()
     if len(rows) < cfg.min_faces:
         return 0
-    labels = dbscan(np.stack([np.frombuffer(r["embedding"], np.float32) for r in rows]), cfg.max_distance, cfg.min_faces)
+    emb = np.stack([np.frombuffer(r["embedding"], np.float32) for r in rows])
+    labels = dbscan(emb, cfg.max_distance, cfg.min_faces)
     created = 0
     for label in sorted(set(labels) - {-1}):
-        members = [rows[i]["id"] for i in np.flatnonzero(labels == label)]
+        idx = np.flatnonzero(labels == label)
+        dist = 1.0 - emb[idx] @ emb[idx].T
+        np.fill_diagonal(dist, np.inf)
         char = db.execute("INSERT INTO characters DEFAULT VALUES").lastrowid
-        db.executemany("UPDATE detections SET character_id = ?, status = 'assigned' WHERE id = ?",
-                       [(char, m) for m in members])
+        # distance = to the nearest fellow member, so the report histogram covers founding members too
+        db.executemany("UPDATE detections SET character_id = ?, status = 'assigned', distance = ? WHERE id = ?",
+                       [(char, float(dist[j].min()), rows[i]["id"]) for j, i in enumerate(idx)])
         created += 1
     return created
 

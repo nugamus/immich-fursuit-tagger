@@ -60,6 +60,37 @@ def bench(args) -> int:
     return 0
 
 
+def _context():
+    from tagger import state
+    from tagger.config import Config
+    from tagger.immich import Immich
+
+    cfg = Config()
+    clients = {label: Immich(cfg.immich_url, key) for label, key in cfg.users().items()}
+    return cfg, state.connect(cfg.db_path), clients
+
+
+def scan(args) -> int:
+    from tagger.runtime import Models
+    from tagger.scan import scan_once
+
+    cfg, db, clients = _context()
+    models = Models(cfg.models_dir, device=cfg.inference_device, threads=cfg.threads, ttl_min=cfg.model_ttl_min)
+    scan_once(cfg, db, models, clients, album_ids=args.album or None, limit=args.limit)
+    return 0
+
+
+def report(args) -> int:
+    from tagger import report as rep
+    from tagger import state
+    from tagger.config import Config
+
+    cfg = Config()
+    Path(args.out).write_text(rep.build(cfg, state.connect(cfg.db_path)), encoding="utf-8")
+    print(f"wrote {args.out}")
+    return 0
+
+
 def main(argv=None) -> int:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "info").upper(), format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(prog="tagger")
@@ -71,6 +102,14 @@ def main(argv=None) -> int:
     p.add_argument("--threads", type=int, default=int(os.environ["THREADS"]) if os.environ.get("THREADS") else None)
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=bench)
+    p = sub.add_parser("scan", help="one read-only pass: access scan, detect, embed, recognize (no Immich writes)")
+    p.add_argument("--once", action="store_true", help="accepted for PLAN.md compatibility; scan always runs once")
+    p.add_argument("--album", action="append", help="limit to this album ID (repeatable)")
+    p.add_argument("--limit", type=int, help="process at most N assets")
+    p.set_defaults(func=scan)
+    p = sub.add_parser("report", help="write the HTML dry-run report")
+    p.add_argument("--out", default="/data/report.html")
+    p.set_defaults(func=report)
     args = parser.parse_args(argv)
     return args.func(args)
 
