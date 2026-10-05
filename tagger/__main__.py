@@ -8,6 +8,7 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 
 
@@ -17,9 +18,12 @@ def bench(args) -> int:
 
     models = Models(Path(args.models), device=args.device, threads=args.threads)
     images = [Image.open(p).convert("RGB") for p in sorted(Path(args.images).glob("*.jpg"))[: args.limit]]
-    if not images:
-        print(f"no .jpg images in {args.images}", file=sys.stderr)
-        return 2
+    synthetic = not images
+    if synthetic:
+        # Inference time doesn't depend on content: random 1920x1440 previews, fixed head-sized crops.
+        print(f"no .jpg images in {args.images}; using {args.limit} synthetic previews")
+        rng = np.random.default_rng(0)
+        images = [Image.fromarray(rng.integers(0, 255, (1440, 1920, 3), dtype=np.uint8)) for _ in range(args.limit)]
 
     t0 = time.perf_counter()
     detector = models.detector()
@@ -32,6 +36,8 @@ def bench(args) -> int:
         boxes, _ = detector(img)
         det_ms.append((time.perf_counter() - t) * 1000)
         crops += [c for c in (crop(img, b) for b in boxes) if c is not None]
+    if synthetic:
+        crops = [img.crop((600, 300, 1000, 750)) for img in images]
     print(f"detect: {len(images)} images, median {statistics.median(det_ms):.0f} ms, max {max(det_ms):.0f} ms, "
           f"{len(crops)} crops")
 
