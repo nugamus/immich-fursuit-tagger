@@ -37,7 +37,9 @@ def provider_list(device: str) -> list:
     if device == "openvino":
         # The iGPU needs /dev/dri passed through; fall back to OpenVINO on CPU otherwise.
         gpu = Path("/dev/dri").exists()
-        options = {"device_type": "GPU" if gpu else "CPU", "precision": "FP16" if gpu else "FP32"}
+        options = {"device_type": "GPU" if gpu else "CPU", "precision": "FP16" if gpu else "FP32",
+                   # Compiling for the iGPU takes ~30 s on an N100; cache it so idle unload/reload stays cheap.
+                   "cache_dir": os.environ.get("OV_CACHE_DIR", "/data/ov_cache")}
         return [(PROVIDER[device], options), PROVIDER["cpu"]]
     return [PROVIDER[device]] if device == "cpu" else [PROVIDER[device], PROVIDER["cpu"]]
 

@@ -3,8 +3,8 @@ revision = 3
 requires-python = ">=3.12, <3.14"
 resolution-markers = [
     "python_full_version >= '3.13' and sys_platform != 'darwin'",
-    "python_full_version < '3.13' and sys_platform != 'darwin'",
     "python_full_version >= '3.13' and sys_platform == 'darwin'",
+    "python_full_version < '3.13' and sys_platform != 'darwin'",
     "python_full_version < '3.13' and sys_platform == 'darwin'",
 ]
 conflicts = [[
@@ -342,6 +342,8 @@ source = { virtual = "." }
 dependencies = [
     { name = "numpy" },
     { name = "pillow" },
+    { name = "pyyaml" },
+    { name = "requests" },
 ]
 
 [package.optional-dependencies]
@@ -381,6 +383,8 @@ requires-dist = [
     { name = "onnxruntime-gpu", marker = "extra == 'cuda'", specifier = ">=1.23" },
     { name = "onnxruntime-openvino", marker = "extra == 'openvino'", specifier = ">=1.23" },
     { name = "pillow", specifier = ">=11" },
+    { name = "pyyaml", specifier = ">=6" },
+    { name = "requests", specifier = ">=2.32" },
     { name = "rfdetr", extras = ["onnx"], marker = "extra == 'exporter'", specifier = "==1.8.3" },
     { name = "torch", marker = "extra == 'exporter'", specifier = "==2.12.1", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "extra == 'exporter'", index = "https://download.pytorch.org/whl/cpu" },

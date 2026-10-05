@@ -35,8 +35,9 @@ class Embedder:
     def __init__(self, session, batch_size: int = 8):
         self.session = session
         self.input_name = session.get_inputs()[0].name
-        self.resolution = session.get_inputs()[0].shape[-1]
-        self.batch_size = batch_size
+        shape = session.get_inputs()[0].shape
+        self.resolution = shape[-1]
+        self.batch_size = shape[0] if isinstance(shape[0], int) else batch_size
 
     def __call__(self, crops: list[Image.Image]) -> np.ndarray:
         """Crops -> (N, 512) L2-normalized float32 embeddings."""

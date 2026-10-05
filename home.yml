@@ -1,0 +1,114 @@
+- generic [ref=f3e3]:
+  - region "Notifications alt+T":
+    - list
+  - generic [ref=f3e6]:
+    - button [ref=f3e7] [cursor=pointer]
+    - button [ref=f3e11] [cursor=pointer]
+  - generic [ref=f3e14]:
+    - generic [ref=f3e15]:
+      - generic [ref=f3e17]:
+        - generic [ref=f3e18]: 11:33
+        - generic [ref=f3e19]: Monday, October 5, 2026
+      - generic [ref=f3e21]:
+        - generic [ref=f3e22]:
+          - generic [ref=f3e23]: System
+          - button [ref=f3e24] [cursor=pointer]
+        - generic [ref=f3e27]:
+          - generic [ref=f3e29]:
+            - generic [ref=f3e34]:
+              - generic [ref=f3e35]: 28 %
+              - generic [ref=f3e36]: CPU
+            - generic [ref=f3e37] [cursor=pointer]: 3.6W / 38.00°C
+          - generic [ref=f3e39]:
+            - generic [ref=f3e44]:
+              - generic [ref=f3e45]: 45 %
+              - generic [ref=f3e46]: RAM
+            - generic [ref=f3e47]: 15.4 GB
+        - generic [ref=f3e49]:
+          - generic [ref=f3e50] [cursor=pointer]: CPU
+          - generic [ref=f3e51] [cursor=pointer]: RAM
+          - button [ref=f3e52] [cursor=pointer]
+      - generic [ref=f3e59]:
+        - generic [ref=f3e60]:
+          - generic [ref=f3e61]: Storage
+          - button [ref=f3e62] [cursor=pointer]
+        - generic [ref=f3e67]:
+          - generic [ref=f3e68]: Healthy
+          - generic [ref=f3e69]: "Used: 52.7 GB"
+          - generic [ref=f3e70]: "Total: 3.92 TB"
+      - generic [ref=f3e74]:
+        - generic [ref=f3e75]:
+          - generic [ref=f3e76]: Network
+          - button "eth0" [ref=f3e1496] [cursor=pointer]
+        - generic [ref=f3e84]:
+          - generic [ref=f3e85]: MB
+          - generic [ref=f3e87]: 9 kB/s
+          - generic [ref=f3e89]: 4 kB/s
+          - button [ref=f3e90] [cursor=pointer]
+      - generic [ref=f3e94]:
+        - generic [ref=f3e95]: Widget settings
+        - button [ref=f3e96] [cursor=pointer]
+    - generic [ref=f3e99]:
+      - textbox "Search..." [ref=f3e1497]
+      - generic [ref=f3e107]:
+        - generic [ref=f3e108]: App Installing
+        - generic [ref=f3e110]: Installing Nginx Proxy Manager
+      - generic [ref=f3e117]:
+        - generic [ref=f3e118]:
+          - generic [ref=f3e119]: Apps
+          - button [ref=f3e120] [cursor=pointer]
+        - generic [ref=f3e122]:
+          - generic [ref=f3e124] [cursor=pointer]:
+            - generic [ref=f3e125]:
+              - img "App Store"
+            - generic [ref=f3e126]: App Store
+          - generic [ref=f3e128] [cursor=pointer]:
+            - generic [ref=f3e129]:
+              - img "Settings"
+            - generic [ref=f3e130]: Settings
+          - generic [ref=f3e132] [cursor=pointer]:
+            - generic [ref=f3e133]:
+              - img "Backup"
+            - generic [ref=f3e134]: Backup
+          - generic [ref=f3e136] [cursor=pointer]:
+            - generic [ref=f3e137]:
+              - img "Files"
+            - generic [ref=f3e138]: Files
+          - generic [ref=f3e140] [cursor=pointer]:
+            - generic [ref=f3e141]:
+              - img "PeerDrop"
+            - generic [ref=f3e142]: PeerDrop
+          - generic [ref=f3e144] [cursor=pointer]:
+            - generic [ref=f3e145]:
+              - img "ZVM"
+            - generic [ref=f3e146]: ZVM
+          - generic [ref=f3e148] [cursor=pointer]:
+            - button [ref=f3e149]
+            - generic [ref=f3e151]:
+              - img "IceWhale Community"
+            - generic [ref=f3e152]: IceWhale Community
+          - generic [ref=f3e154] [cursor=pointer]:
+            - button [ref=f3e155]
+            - generic [ref=f3e157]:
+              - img "Stash"
+            - generic [ref=f3e158]: Stash
+          - generic [ref=f3e160] [cursor=pointer]:
+            - button [ref=f3e161]
+            - generic [ref=f3e163]:
+              - img "Nginx Proxy Manager"
+            - generic [ref=f3e164]: Nginx Proxy Manager
+          - generic [ref=f3e166] [cursor=pointer]:
+            - button [ref=f3e575]
+            - generic [ref=f3e577]:
+              - img "Immich"
+            - generic [ref=f3e170]: Immich
+          - generic [ref=f3e1481] [cursor=pointer]:
+            - button [ref=f3e1498]
+            - generic [ref=f3e1500]:
+              - generic: New
+              - img "Fursuit Tagger Bench"
+            - generic [ref=f3e1487]: Fursuit Tagger Bench
+  - generic [ref=f3e174]:
+    - button [ref=f3e175] [cursor=pointer]
+    - button [ref=f3e177] [cursor=pointer]
+    - button [ref=f3e179] [cursor=pointer]

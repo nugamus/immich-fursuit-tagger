@@ -15,8 +15,9 @@ from pathlib import Path
 
 log = logging.getLogger("exporter")
 
-# Bump when export code changes in a way that alters model outputs.
-EXPORT_CODE_VERSION = 1
+# Bump when export code changes the produced graph. Separate per model so a change re-runs only what it affects.
+DETECTOR_EXPORT_VERSION = 1
+EMBEDDER_EXPORT_VERSION = 2  # 2: static batch 1 (OpenVINO GPU can't compile the dynamic-batch graph)
 
 DETECTOR_REPO = "aibyou0830/rf-detr-for-fur"
 DETECTOR_REVISION = os.environ.get("DETECTOR_REVISION", "ce47a3d3e9910638ff8ea66c18d7fe6f6f374d77")
@@ -31,7 +32,7 @@ OPSET = 17
 
 
 def version_of(*parts: object) -> str:
-    return hashlib.sha256(json.dumps([EXPORT_CODE_VERSION, *parts]).encode()).hexdigest()[:12]
+    return hashlib.sha256(json.dumps(parts).encode()).hexdigest()[:12]
 
 
 def sha256_file(path: Path) -> str:
@@ -103,7 +104,6 @@ def export_embedder(out_dir: Path, version: str, backbone_revision: str) -> dict
     dummy = torch.zeros(1, 3, EMBEDDER_RESOLUTION, EMBEDDER_RESOLUTION)
     with torch.inference_mode():
         torch.onnx.export(model, (dummy,), str(target), input_names=["pixel_values"], output_names=["embedding"],
-                          dynamic_axes={"pixel_values": {0: "batch"}, "embedding": {0: "batch"}},
                           opset_version=OPSET, dynamo=False)
     return {"version": version, "file": target.name, "sha256": sha256_file(target),
             "source": f"{BACKBONE_REPO}@{backbone_revision} + {HEAD_REPO}@{HEAD_REVISION}",
@@ -121,7 +121,7 @@ def main() -> int:
     manifest_path = out_dir / "manifest.json"
     manifest = json.loads(manifest_path.read_text()) if manifest_path.exists() else {"schema": 1}
 
-    det_version = version_of(DETECTOR_REPO, DETECTOR_REVISION, DETECTOR_RESOLUTION)
+    det_version = version_of(DETECTOR_EXPORT_VERSION, DETECTOR_REPO, DETECTOR_REVISION, DETECTOR_RESOLUTION)
     if is_current(manifest.get("detector"), det_version, out_dir):
         log.info("detector %s up to date", det_version)
     else:
@@ -131,7 +131,7 @@ def main() -> int:
 
     try:
         backbone_revision = resolve_backbone_revision()
-        emb_version = version_of(BACKBONE_REPO, backbone_revision, HEAD_REPO, HEAD_REVISION, EMBEDDER_RESOLUTION)
+        emb_version = version_of(EMBEDDER_EXPORT_VERSION, BACKBONE_REPO, backbone_revision, HEAD_REPO, HEAD_REVISION, EMBEDDER_RESOLUTION)
         if is_current(manifest.get("embedder"), emb_version, out_dir):
             log.info("embedder %s up to date", emb_version)
         else:
