@@ -59,7 +59,8 @@ def tidy(db: sqlite3.Connection, label: str, client: Immich, hide_below: float, 
         elif row is None or row[0] != asset_id:
             if not dry_run:
                 try:
-                    updated = client.put(f"/people/{p['id']}", {"featureFaceAssetId": asset_id})
+                    client.put(f"/people/{p['id']}", {"featureFaceAssetId": asset_id})
+                    updated = client.get(f"/people/{p['id']}")  # GET's updatedAt format, as compared later
                 except ImmichError as e:
                     log.warning("thumbnail for person %s: %s", p["id"], e)
                     continue
@@ -69,7 +70,8 @@ def tidy(db: sqlite3.Connection, label: str, client: Immich, hide_below: float, 
             stats["thumbnails"] += 1
         if hide_below and frac < hide_below and not p["isHidden"] and not p["name"] and not user_touched:
             if not dry_run:
-                updated = client.put(f"/people/{p['id']}", {"isHidden": True})
+                client.put(f"/people/{p['id']}", {"isHidden": True})
+                updated = client.get(f"/people/{p['id']}")
                 db.execute("UPDATE human_thumbs SET updated_at = ? WHERE person_id = ? AND user_label = ?",
                            (updated.get("updatedAt"), p["id"], label))
             stats["hidden"] += 1

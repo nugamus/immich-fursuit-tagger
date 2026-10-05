@@ -94,6 +94,128 @@ def people(args) -> int:
     return 0
 
 
+def _write_pass(cfg, db, clients) -> str | None:
+    """Guard, then one write pass (or a dry-run tally). Returns the read-only reason, if any."""
+    from tagger.writer import Writer, guard
+
+    reason = guard(cfg, clients)
+    if reason:
+        logging.getLogger("writer").error("READ-ONLY: %s", reason)
+        return reason
+    Writer(cfg, db, clients).sync()
+    return None
+
+
+def _people_pass(cfg, db, clients, ids) -> None:
+    from tagger import people as ppl
+
+    if cfg.share_people:
+        ppl.share_all(clients, ids, cfg.dry_run)
+    if cfg.human_thumbnails or cfg.hide_background_pct:
+        for label, client in clients.items():
+            ppl.tidy(db, label, client, cfg.hide_background_pct / 100, cfg.dry_run)
+
+
+def write(args) -> int:
+    from tagger.scan import sync_users
+    from tagger.writer import paused
+
+    cfg, db, clients = _context()
+    sync_users(db, clients)
+    if paused(db):
+        print("paused (after undo); run `tagger resume` first")
+        return 1
+    return 2 if _write_pass(cfg, db, clients) else 0
+
+
+def run(args) -> int:
+    """The long-running loop: scan, write, housekeeping, sleep. Safe to restart at any time."""
+    import json
+    from datetime import datetime, timezone
+
+    from tagger.runtime import Models
+    from tagger.scan import scan_once, sync_users
+    from tagger.writer import paused
+
+    log = logging.getLogger("run")
+    cfg, db, clients = _context()
+    models = Models(cfg.models_dir, device=cfg.inference_device, threads=cfg.threads, ttl_min=cfg.model_ttl_min)
+    while True:
+        reason = None
+        try:
+            if paused(db):
+                log.info("paused (after undo); `tagger resume` to continue")
+            else:
+                scan_once(cfg, db, models, clients)
+                reason = _write_pass(cfg, db, clients)
+                _people_pass(cfg, db, clients, sync_users(db, clients))
+            (cfg.data_dir / "health.json").write_text(json.dumps({
+                "last_success": datetime.now(timezone.utc).isoformat(), "read_only": reason}))
+        except Exception:  # keep the loop alive; health goes stale and the container turns unhealthy
+            log.exception("pass failed")
+        deadline = time.monotonic() + cfg.scan_interval_min * 60
+        while time.monotonic() < deadline:
+            models.release_if_idle()
+            time.sleep(30)
+
+
+def health(args) -> int:
+    """Docker HEALTHCHECK: healthy if a pass succeeded recently and writing isn't blocked by the version guard."""
+    import json
+    from datetime import datetime, timezone
+
+    from tagger.config import Config
+
+    cfg = Config()
+    try:
+        h = json.loads((cfg.data_dir / "health.json").read_text())
+    except (OSError, ValueError):
+        return 1
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(h["last_success"])).total_seconds()
+    ok = age < cfg.scan_interval_min * 60 * 3 + 3600 and not h.get("read_only")
+    print(h)
+    return 0 if ok else 1
+
+
+def undo(args) -> int:
+    from tagger.writer import undo as run_undo
+
+    cfg, db, clients = _context()
+    print(run_undo(cfg, db, clients, since=args.since, user=args.user, dry_run=args.dry_run))
+    if not args.dry_run:
+        print("paused: the loop won't recreate anything until `tagger resume`")
+    return 0
+
+
+def resume(args) -> int:
+    from tagger import state
+    from tagger.config import Config
+
+    cfg = Config()
+    state.set_meta(state.connect(cfg.db_path), "paused", "0")
+    print("resumed")
+    return 0
+
+
+def status(args) -> int:
+    from tagger import state
+    from tagger.config import Config
+
+    cfg = Config()
+    db = state.connect(cfg.db_path)
+    q = lambda sql: db.execute(sql).fetchone()[0]  # noqa: E731
+    print({"paused": state.get_meta(db, "paused") == "1",
+           "assets": q("SELECT count(*) FROM assets"),
+           "detections": q("SELECT count(*) FROM detections"),
+           "assigned": q("SELECT count(*) FROM detections WHERE status = 'assigned'"),
+           "rejected": q("SELECT count(*) FROM detections WHERE status = 'rejected'"),
+           "faces_in_immich": q("SELECT count(*) FROM detections WHERE face_id IS NOT NULL"),
+           "characters": q("SELECT count(*) FROM characters WHERE merged_into IS NULL"),
+           "people_in_immich": q("SELECT count(*) FROM characters WHERE person_group_id IS NOT NULL"),
+           "tagged_assets": q("SELECT count(*) FROM asset_tags")})
+    return 0
+
+
 def recluster(args) -> int:
     from tagger import state
     from tagger.config import Config
@@ -138,6 +260,21 @@ def main(argv=None) -> int:
     p.set_defaults(func=people)
     p = sub.add_parser("recluster", help="dry run only: redo recognition from stored embeddings with current thresholds")
     p.set_defaults(func=recluster)
+    p = sub.add_parser("run", help="long-running loop: scan, write to Immich, housekeeping")
+    p.set_defaults(func=run)
+    p = sub.add_parser("write", help="one write pass from the current state (respects DRY_RUN and the version guard)")
+    p.set_defaults(func=write)
+    p = sub.add_parser("undo", help="remove everything the tagger created in Immich, then pause")
+    p.add_argument("--since", help="only things created at/after this ISO date")
+    p.add_argument("--user", help="only this user label")
+    p.add_argument("--dry-run", action="store_true")
+    p.set_defaults(func=undo)
+    p = sub.add_parser("resume", help="clear the paused flag set by undo")
+    p.set_defaults(func=resume)
+    p = sub.add_parser("status", help="counts from the state database")
+    p.set_defaults(func=status)
+    p = sub.add_parser("health", help="exit 0 if healthy (for Docker HEALTHCHECK)")
+    p.set_defaults(func=health)
     p = sub.add_parser("report", help="write the HTML dry-run report")
     p.add_argument("--out", default="/data/report.html")
     p.set_defaults(func=report)

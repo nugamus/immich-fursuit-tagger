@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 
 from tagger.config import Config
+from tagger.detector import iou
 from tagger.embedder import crop
 from tagger.immich import Immich, ImmichError
 from tagger.matching import burst_assign, dbscan, match, split_conflicts
@@ -73,6 +74,12 @@ def taken_at(asset: dict) -> str | None:
     return exif.get("dateTimeOriginal") or asset.get("fileCreatedAt")
 
 
+def change_key(asset: dict) -> str:
+    """What must change for an asset to be re-detected. Not updatedAt: our own faces and tags bump that.
+    The thumbhash changes when the pixels (or edits) change."""
+    return f"{asset.get('thumbhash')}|{int(bool(asset.get('isEdited')))}"
+
+
 def record_access(db: sqlite3.Connection, label: str, assets: dict[str, tuple[dict, str]]) -> None:
     db.execute("BEGIN")
     for asset_id, (a, via) in assets.items():
@@ -80,7 +87,7 @@ def record_access(db: sqlite3.Connection, label: str, assets: dict[str, tuple[di
                    "ON CONFLICT(asset_id) DO UPDATE SET taken_at = excluded.taken_at, edited = excluded.edited, "
                    "status = CASE WHEN assets.updated_at IS NOT excluded.updated_at THEN 'new' ELSE assets.status END, "
                    "updated_at = excluded.updated_at",
-                   (asset_id, a["ownerId"], taken_at(a), a.get("updatedAt"), int(bool(a.get("isEdited")))))
+                   (asset_id, a["ownerId"], taken_at(a), change_key(a), int(bool(a.get("isEdited")))))
         db.execute("INSERT INTO asset_access(asset_id, user_label, via) VALUES(?, ?, ?) "
                    "ON CONFLICT DO UPDATE SET via = excluded.via", (asset_id, label, via))
     db.execute("COMMIT")
@@ -115,11 +122,16 @@ def process_asset(db: sqlite3.Connection, cfg: Config, models: Models, client: I
             db.execute("UPDATE detections SET embedding = ? WHERE id = ?", (e.astype(np.float32).tobytes(), r["id"]))
     else:
         boxes, scores = models.detector()(img)
-        kept = [(b, s, c) for b, s in zip(boxes, scores) if (c := crop(img, b)) is not None and s >= cfg.min_score]
+        # Detections already written to Immich or rejected by the user survive re-detection; new boxes that overlap
+        # them are dropped so a face is never written twice and a rejection is never undone.
+        keep = db.execute("SELECT x, y, w, h FROM detections WHERE asset_id = ? AND (status = 'rejected' OR face_id IS NOT NULL)",
+                          (aid,)).fetchall()
+        held = np.array([[k[0], k[1], k[0] + k[2], k[1] + k[3]] for k in keep], dtype=np.float32).reshape(-1, 4)
+        kept = [(b, s, c) for b, s in zip(boxes, scores)
+                if (c := crop(img, b)) is not None and s >= cfg.min_score and not (len(held) and iou(b, held).max() > 0.5)]
         embs = models.embedder()([c for _, _, c in kept]) if kept else []
         db.execute("BEGIN")
-        # Rejections survive re-detection (M4 matches them by IoU); everything else is recomputed.
-        db.execute("DELETE FROM detections WHERE asset_id = ? AND status != 'rejected'", (aid,))
+        db.execute("DELETE FROM detections WHERE asset_id = ? AND status != 'rejected' AND face_id IS NULL", (aid,))
         crops_dir = cfg.data_dir / "crops"
         crops_dir.mkdir(parents=True, exist_ok=True)
         for (b, s, c), e in zip(kept, embs):
@@ -275,6 +287,9 @@ def recognize(db: sqlite3.Connection, cfg: Config) -> dict:
     if stats["session"]:
         stats["matched"] += _assign_pass(db, cfg)
     stats["burst"] = _burst_pass(db, cfg)
+    # Characters left without members (e.g. after re-detection) and never written to Immich are dropped.
+    db.execute("DELETE FROM characters WHERE person_group_id IS NULL AND id NOT IN "
+               "(SELECT DISTINCT character_id FROM detections WHERE character_id IS NOT NULL)")
     db.execute("COMMIT")
     return stats
 

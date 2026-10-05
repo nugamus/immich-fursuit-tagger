@@ -76,6 +76,18 @@ MIGRATIONS = [
         PRIMARY KEY (person_id, user_label)
     );
     """,
+    """
+    ALTER TABLE characters ADD COLUMN owner_label TEXT;
+    ALTER TABLE characters ADD COLUMN person_created_at TEXT;
+    ALTER TABLE detections ADD COLUMN face_label TEXT;
+    ALTER TABLE detections ADD COLUMN written_at TEXT;
+    ALTER TABLE detections ADD COLUMN skip_reason TEXT;
+    ALTER TABLE shares ADD COLUMN thumb_asset_id TEXT;
+    ALTER TABLE shares ADD COLUMN thumb_updated_at TEXT;
+    ALTER TABLE shares ADD COLUMN thumb_name TEXT;
+    ALTER TABLE asset_tags ADD COLUMN written_at TEXT;
+    CREATE TABLE tags (user_label TEXT PRIMARY KEY, tag_id TEXT NOT NULL, created INTEGER NOT NULL DEFAULT 0);
+    """,
 ]
 
 

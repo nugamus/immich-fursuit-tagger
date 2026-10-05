@@ -48,6 +48,11 @@ class Config:
     burst_window_min: float = field(default_factory=lambda: float(_env("BURST_WINDOW_MIN", "10")))
     burst_margin: float = field(default_factory=lambda: float(_env("BURST_MARGIN", "0.03")))
 
+    overlap_iou: float = field(default_factory=lambda: float(_env("OVERLAP_IOU", "0.5")))
+    tag_name: str = field(default_factory=lambda: _env("TAG_NAME", "fursuit"))
+    allow_untested_immich: bool = field(default_factory=lambda: _env("ALLOW_UNTESTED_IMMICH", "false").lower() == "true")
+    scan_interval_min: float = field(default_factory=lambda: float(_env("SCAN_INTERVAL_MIN", "30")))
+
     dry_run: bool = field(default_factory=lambda: _env("DRY_RUN", "false").lower() == "true")
 
     # Human people housekeeping (tagger/people.py), all opt-in.
