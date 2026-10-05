@@ -34,15 +34,17 @@ class Config:
 
     min_score: float = field(default_factory=lambda: float(_env("MIN_SCORE", "0.5")))
     max_distance: float = field(default_factory=lambda: float(_env("MAX_DISTANCE", "0.15")))
-    # DBSCAN eps for founding new characters from the pending pool. M3 review on 588 real photos: 0.20 found two more
-    # real suits but also formed a junk cluster of back-of-head shots, so the default matches MAX_DISTANCE.
-    cluster_eps: float = field(default_factory=lambda: float(_env("CLUSTER_EPS", "0.15")))
+    # DBSCAN eps for founding new characters from the pending pool. M3 review on 588 real photos: 0.15 missed a tight
+    # 3-shot side-view group of a known suit, 0.20 formed a junk cluster of back-of-head shots; 0.17 gets the first
+    # without the second. Over-split groups become extra people that the user merges in Immich.
+    cluster_eps: float = field(default_factory=lambda: float(_env("CLUSTER_EPS", "0.17")))
     min_faces: int = field(default_factory=lambda: int(_env("MIN_FACES", "3")))
     ref_quality_min: float = field(default_factory=lambda: float(_env("REF_QUALITY_MIN", "0.3")))
     # Only confident heads may found a new character or act as references. M3 review: geese/ducks/human faces scored
     # <= 0.64, while blurry side views of real suits (quality 0.47-0.55, score >= 0.77) must still count.
     ref_score_min: float = field(default_factory=lambda: float(_env("REF_SCORE_MIN", "0.7")))
     knn: int = field(default_factory=lambda: int(_env("KNN", "5")))
+    session_min: float = field(default_factory=lambda: float(_env("SESSION_MIN", "30")))
     burst_window_min: float = field(default_factory=lambda: float(_env("BURST_WINDOW_MIN", "10")))
     burst_margin: float = field(default_factory=lambda: float(_env("BURST_MARGIN", "0.03")))
 

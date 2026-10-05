@@ -203,6 +203,47 @@ def _burst_pass(db: sqlite3.Connection, cfg: Config) -> int:
     return assigned
 
 
+def _session_pass(db: sqlite3.Connection, cfg: Config) -> int:
+    """Chain within a photo session: a pending head within MAX_DISTANCE of an already-assigned head (any score,
+    references or not) taken within SESSION_MIN minutes joins that character, if that's the only character it links
+    to. Repeats until stable, so 240 -> 243 -> 242(#6) style chains resolve. Same light and outfit within a session
+    makes these tight links trustworthy; the same-photo rule still applies."""
+    window = timedelta(minutes=cfg.session_min).total_seconds()
+    rows = db.execute("SELECT d.id, d.asset_id, d.embedding, d.status, d.character_id, d.via_burst, a.taken_at "
+                      "FROM detections d JOIN assets a USING(asset_id) "
+                      "WHERE d.embedding IS NOT NULL AND a.taken_at IS NOT NULL AND d.status != 'rejected'").fetchall()
+    if not rows:
+        return 0
+    emb = np.stack([np.frombuffer(r["embedding"], np.float32) for r in rows])
+    ts = np.array([datetime.fromisoformat(r["taken_at"]).timestamp() for r in rows])
+    char = np.array([r["character_id"] if r["status"] == "assigned" and not r["via_burst"] else -1 for r in rows])
+    assets = [r["asset_id"] for r in rows]
+    taken = _taken(db)
+    linked = ((1.0 - emb @ emb.T) <= cfg.max_distance) & (np.abs(ts[:, None] - ts[None, :]) <= window)
+    np.fill_diagonal(linked, False)
+    assigned = 0
+    changed = True
+    while changed:
+        changed = False
+        for i in np.flatnonzero(char == -1):
+            if rows[i]["status"] != "pending":
+                continue
+            chars = set(char[linked[i]].tolist()) - {-1}
+            if len(chars) != 1:
+                continue
+            c = chars.pop()
+            if c in taken.get(assets[i], ()):
+                continue
+            d = float((1.0 - emb[linked[i] & (char == c)] @ emb[i]).min())
+            db.execute("UPDATE detections SET character_id = ?, status = 'assigned', distance = ? WHERE id = ?",
+                       (int(c), d, rows[i]["id"]))
+            char[i] = c
+            taken.setdefault(assets[i], set()).add(int(c))
+            assigned += 1
+            changed = True
+    return assigned
+
+
 def _cluster_pass(db: sqlite3.Connection, cfg: Config) -> int:
     rows = db.execute("SELECT id, asset_id, embedding FROM detections WHERE status = 'pending' AND is_reference "
                       "AND embedding IS NOT NULL").fetchall()
@@ -229,6 +270,9 @@ def recognize(db: sqlite3.Connection, cfg: Config) -> dict:
     stats = {"matched": _assign_pass(db, cfg)}
     stats["new_characters"] = _cluster_pass(db, cfg)
     if stats["new_characters"]:
+        stats["matched"] += _assign_pass(db, cfg)
+    stats["session"] = _session_pass(db, cfg)
+    if stats["session"]:
         stats["matched"] += _assign_pass(db, cfg)
     stats["burst"] = _burst_pass(db, cfg)
     db.execute("COMMIT")

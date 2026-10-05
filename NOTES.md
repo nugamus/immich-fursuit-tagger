@@ -221,3 +221,10 @@ On fursuit photos, buffalo_l found mostly tiny background faces (median width 2�
 - System config change: `minScore` 0.7 → 0.8 and `maxDistance` 0.5 → 0.55, followed by forced face detection and recognition. That gave 6 people.
 - `tagger people` (new, opt-in): sets each person's featured face to their largest face, unless the user changed it (tracked via the person's `updatedAt`). `--hide-below-pct 4` hides people whose largest face is under 4% of the photo width (1 person hidden). `--share` re-applies `PUT /people/users {type: everyone}`, because Immich's "everyone" share is a snapshot.
 - Result: 4 visible people, all with sharp thumbnails, and shared with Nugamus.
+
+## M3 review round 3 (2026-10-05)
+
+- The user flagged six #6 crops at 0.19–0.29 that weren't grouped. Root cause: #242 is a #6 member with a detector score of 0.65 (just under `REF_SCORE_MIN`), so it is not a gallery reference, yet it sits 0.08–0.13 from 240, 243 and 244. Fix: **`_session_pass`**. A pending head within `MAX_DISTANCE` of any assigned head (reference or not) taken within `SESSION_MIN` (30) minutes joins that character, transitively, if it links to exactly one character and passes the same-photo rule. 240, 243 and 244 now belong to #6.
+- 275, 278 and 284 (the same suit from the side) are about 0.2 from the *husky* and 0.25–0.37 from #6's other views; the model genuinely confuses that view. A looser "same session, relative" rule sent them to the husky, so it was rejected. `CLUSTER_EPS` 0.15 → 0.17 founds them as their own 3-crop character, which the user then merges. 0.17 forms no junk cluster (0.20 did).
+- #2 (husky from behind) has no clean automatic merge signal. Time continuity gave 3 of 5 #2 shots within 5 s of a husky shot, but also 2 of 7 for two genuinely different suits. Left to the user's merge in Immich.
+- Final: 8 characters, of which 2 are expected user merges (#2 into the husky, the 3-crop side group into #6). 0 same-photo duplicates. 45 heads pending.
