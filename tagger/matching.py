@@ -37,7 +37,8 @@ def burst_assign(m: Match, max_distance: float, margin: float, burst_chars: set[
     return None
 
 
-def split_conflicts(embeddings: np.ndarray, groups: np.ndarray, labels: np.ndarray, min_samples: int) -> np.ndarray:
+def split_conflicts(embeddings: np.ndarray, groups: np.ndarray, labels: np.ndarray, min_samples: int,
+                    eps: float | None = None) -> np.ndarray:
     """One photo can't show the same character twice. A cluster holding two detections from the same photo
     (`groups` = asset id per row) chained two characters together: split it 2-means style, seeded by the
     most distant same-photo pair (pinned to opposite sides), until no cluster has a conflict.
@@ -73,7 +74,19 @@ def split_conflicts(embeddings: np.ndarray, groups: np.ndarray, labels: np.ndarr
         labels[idx[side == 1]] = next_label
         queue += [lab, next_label]
         next_label += 1
-    return labels
+    if eps is None:
+        return labels
+    # 2-means sides are not density-based: a point can end up with no neighbour on its side. Re-run DBSCAN inside
+    # every final cluster so each member is again within eps of a core point; leftovers become noise.
+    out = np.full_like(labels, -1)
+    nxt = 0
+    for lab in sorted(set(labels.tolist()) - {-1}):
+        idx = np.flatnonzero(labels == lab)
+        sub = dbscan(embeddings[idx], eps, min_samples)
+        for s in sorted(set(sub.tolist()) - {-1}):
+            out[idx[sub == s]] = nxt
+            nxt += 1
+    return out
 
 
 def dbscan(embeddings: np.ndarray, eps: float, min_samples: int) -> np.ndarray:

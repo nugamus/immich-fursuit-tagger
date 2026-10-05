@@ -38,14 +38,20 @@ class Config:
     # real suits but also formed a junk cluster of back-of-head shots, so the default matches MAX_DISTANCE.
     cluster_eps: float = field(default_factory=lambda: float(_env("CLUSTER_EPS", "0.15")))
     min_faces: int = field(default_factory=lambda: int(_env("MIN_FACES", "3")))
-    ref_quality_min: float = field(default_factory=lambda: float(_env("REF_QUALITY_MIN", "0.5")))
-    # Only confident heads may found a new character (low-score detections are partial heads or look-alikes, e.g. geese).
-    ref_score_min: float = field(default_factory=lambda: float(_env("REF_SCORE_MIN", "0.8")))
+    ref_quality_min: float = field(default_factory=lambda: float(_env("REF_QUALITY_MIN", "0.3")))
+    # Only confident heads may found a new character or act as references. M3 review: geese/ducks/human faces scored
+    # <= 0.64, while blurry side views of real suits (quality 0.47-0.55, score >= 0.77) must still count.
+    ref_score_min: float = field(default_factory=lambda: float(_env("REF_SCORE_MIN", "0.7")))
     knn: int = field(default_factory=lambda: int(_env("KNN", "5")))
     burst_window_min: float = field(default_factory=lambda: float(_env("BURST_WINDOW_MIN", "10")))
     burst_margin: float = field(default_factory=lambda: float(_env("BURST_MARGIN", "0.03")))
 
     dry_run: bool = field(default_factory=lambda: _env("DRY_RUN", "false").lower() == "true")
+
+    # Human people housekeeping (tagger/people.py), all opt-in.
+    human_thumbnails: bool = field(default_factory=lambda: _env("HUMAN_THUMBNAILS", "false").lower() == "true")
+    hide_background_pct: float = field(default_factory=lambda: float(_env("HIDE_BACKGROUND_PCT", "0")))
+    share_people: bool = field(default_factory=lambda: _env("SHARE_PEOPLE", "false").lower() == "true")
 
     @property
     def db_path(self) -> Path:

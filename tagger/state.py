@@ -67,6 +67,15 @@ MIGRATIONS = [
     );
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     """,
+    """
+    CREATE TABLE human_thumbs (
+        person_id TEXT NOT NULL,
+        user_label TEXT NOT NULL,
+        asset_id TEXT NOT NULL,
+        updated_at TEXT,                            -- person.updatedAt right after our change
+        PRIMARY KEY (person_id, user_label)
+    );
+    """,
 ]
 
 

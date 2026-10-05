@@ -80,6 +80,20 @@ def scan(args) -> int:
     return 0
 
 
+def people(args) -> int:
+    from tagger import people as ppl
+    from tagger.scan import sync_users
+
+    cfg, db, clients = _context()
+    dry = cfg.dry_run or args.dry_run
+    ids = sync_users(db, clients)
+    if cfg.share_people or args.share:
+        ppl.share_all(clients, ids, dry)
+    for label, client in clients.items():
+        print(label, ppl.tidy(db, label, client, (args.hide_below_pct or cfg.hide_background_pct) / 100, dry))
+    return 0
+
+
 def recluster(args) -> int:
     from tagger import state
     from tagger.config import Config
@@ -117,6 +131,11 @@ def main(argv=None) -> int:
     p.add_argument("--album", action="append", help="limit to this album ID (repeatable)")
     p.add_argument("--limit", type=int, help="process at most N assets")
     p.set_defaults(func=scan)
+    p = sub.add_parser("people", help="human people housekeeping: sharpest thumbnails, hide background people, sharing")
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--share", action="store_true", help="also share every user's people with the others")
+    p.add_argument("--hide-below-pct", type=float, help="hide people whose largest face is narrower than this %% of the photo")
+    p.set_defaults(func=people)
     p = sub.add_parser("recluster", help="dry run only: redo recognition from stored embeddings with current thresholds")
     p.set_defaults(func=recluster)
     p = sub.add_parser("report", help="write the HTML dry-run report")

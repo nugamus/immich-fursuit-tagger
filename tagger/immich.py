@@ -34,6 +34,10 @@ class Immich:
         r = self._request("POST", path, json=body)
         return r.json() if r.content else None
 
+    def put(self, path: str, body: dict):
+        r = self._request("PUT", path, json=body)
+        return r.json() if r.content else {}
+
     # --- identity / server -------------------------------------------------------------------
     def version(self) -> tuple[int, int, int, int | None]:
         v = self.get("/server/version")

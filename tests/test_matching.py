@@ -69,3 +69,14 @@ def test_split_conflicts_separates_two_characters_chained_in_one_cluster():
     # Too small after the split -> noise.
     labels = split_conflicts(emb[[0, 1, 4, 5]], groups[[0, 1, 4, 5]], np.zeros(4, dtype=int), min_samples=3)
     assert list(labels) == [-1, -1, -1, -1]
+
+
+def test_split_conflicts_density_recheck_drops_stranded_points():
+    from tagger.matching import split_conflicts
+
+    # A and B chained by one bridge point X that sits between them; after splitting, X has no eps-neighbour.
+    x = (A + B) / np.linalg.norm(A + B)
+    emb = np.stack([near(A, 0.02, i) for i in range(3)] + [near(B, 0.02, 10 + i) for i in range(3)] + [x])
+    groups = np.array(["p1", "p2", "p3", "p1", "p2", "p3", "p9"])
+    labels = split_conflicts(emb, groups, np.zeros(7, dtype=int), min_samples=3, eps=0.15)
+    assert labels[6] == -1 and labels[0] != labels[3] and -1 not in labels[:6]

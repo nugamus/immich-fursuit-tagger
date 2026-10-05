@@ -210,7 +210,7 @@ def _cluster_pass(db: sqlite3.Connection, cfg: Config) -> int:
         return 0
     emb = np.stack([np.frombuffer(r["embedding"], np.float32) for r in rows])
     labels = dbscan(emb, cfg.cluster_eps, cfg.min_faces)
-    labels = split_conflicts(emb, np.array([r["asset_id"] for r in rows]), labels, cfg.min_faces)
+    labels = split_conflicts(emb, np.array([r["asset_id"] for r in rows]), labels, cfg.min_faces, cfg.cluster_eps)
     created = 0
     for label in sorted(set(labels) - {-1}):
         idx = np.flatnonzero(labels == label)
