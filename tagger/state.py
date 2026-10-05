@@ -26,7 +26,7 @@ MIGRATIONS = [
     CREATE TABLE asset_access (
         asset_id TEXT NOT NULL REFERENCES assets(asset_id) ON DELETE CASCADE,
         user_label TEXT NOT NULL,
-        via TEXT NOT NULL,                          -- own | album | partner
+        via TEXT NOT NULL,                          -- own | album
         PRIMARY KEY (asset_id, user_label)
     );
     CREATE TABLE characters (
@@ -102,6 +102,7 @@ MIGRATIONS = [
     UPDATE shares SET thumbnail_locked = 0, thumb_updated_at = NULL
         WHERE character_id IN (SELECT merged_into FROM characters WHERE merged_into > 0);
     """,
+    "DROP TABLE human_thumbs;",
 ]
 
 

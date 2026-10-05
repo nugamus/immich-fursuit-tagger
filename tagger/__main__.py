@@ -80,20 +80,6 @@ def scan(args) -> int:
     return 0
 
 
-def people(args) -> int:
-    from tagger import people as ppl
-    from tagger.scan import sync_users
-
-    cfg, db, clients = _context()
-    dry = cfg.dry_run or args.dry_run
-    ids = sync_users(db, clients)
-    if cfg.share_people or args.share:
-        ppl.share_all(clients, ids, dry)
-    for label, client in clients.items():
-        print(label, ppl.tidy(db, label, client, (args.hide_below_pct or cfg.hide_background_pct) / 100, dry))
-    return 0
-
-
 def _write_pass(cfg, db, clients) -> str | None:
     """Guard, then one write pass (or a dry-run tally). Returns the read-only reason, if any."""
     from tagger.writer import Writer, guard
@@ -104,16 +90,6 @@ def _write_pass(cfg, db, clients) -> str | None:
         return reason
     Writer(cfg, db, clients).sync()
     return None
-
-
-def _people_pass(cfg, db, clients, ids) -> None:
-    from tagger import people as ppl
-
-    if cfg.share_people:
-        ppl.share_all(clients, ids, cfg.dry_run)
-    if cfg.human_thumbnails or cfg.hide_background_pct:
-        for label, client in clients.items():
-            ppl.tidy(db, label, client, cfg.hide_background_pct / 100, cfg.dry_run)
 
 
 def write(args) -> int:
@@ -129,12 +105,12 @@ def write(args) -> int:
 
 
 def run(args) -> int:
-    """The long-running loop: scan, write, housekeeping, sleep. Safe to restart at any time."""
+    """The long-running loop: scan, write, sleep. Safe to restart at any time."""
     import json
     from datetime import datetime, timezone
 
     from tagger.runtime import Models
-    from tagger.scan import scan_once, sync_users
+    from tagger.scan import scan_once
     from tagger.writer import paused
 
     log = logging.getLogger("run")
@@ -151,7 +127,6 @@ def run(args) -> int:
             else:
                 scan_once(cfg, db, models, clients)
                 reason = _write_pass(cfg, db, clients)
-                _people_pass(cfg, db, clients, sync_users(db, clients))
             (cfg.data_dir / "health.json").write_text(json.dumps({
                 "last_success": datetime.now(timezone.utc).isoformat(), "read_only": reason}))
         except Exception:  # keep the loop alive; health goes stale and the container turns unhealthy
@@ -269,14 +244,9 @@ def main(argv=None) -> int:
     p.add_argument("--album", action="append", help="limit to this album ID (repeatable)")
     p.add_argument("--limit", type=int, help="process at most N assets")
     p.set_defaults(func=scan)
-    p = sub.add_parser("people", help="human people housekeeping: sharpest thumbnails, hide background people, sharing")
-    p.add_argument("--dry-run", action="store_true")
-    p.add_argument("--share", action="store_true", help="also share every user's people with the others")
-    p.add_argument("--hide-below-pct", type=float, help="hide people whose largest face is narrower than this %% of the photo")
-    p.set_defaults(func=people)
     p = sub.add_parser("recluster", help="dry run only: redo recognition from stored embeddings with current thresholds")
     p.set_defaults(func=recluster)
-    p = sub.add_parser("run", help="long-running loop: scan, write to Immich, housekeeping")
+    p = sub.add_parser("run", help="long-running loop: scan and write to Immich")
     p.set_defaults(func=run)
     p = sub.add_parser("write", help="one write pass from the current state (respects DRY_RUN and the version guard)")
     p.set_defaults(func=write)

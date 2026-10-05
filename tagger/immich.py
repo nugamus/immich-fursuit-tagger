@@ -73,18 +73,11 @@ class Immich:
             if not cursor:
                 return
 
-    def smart_search(self, query: str, limit: int) -> list[dict]:
-        body = {"query": query, "size": min(limit, 1000), "filter": {"type": {"eq": "IMAGE"}, "trashedAt": {"eq": None}}}
-        return self.post("/search/smart", body)["assets"]["items"][:limit]
-
     def album(self, album_id: str) -> dict:
         return self.get(f"/albums/{album_id}")
 
     def shared_albums(self) -> list[dict]:
         return self.get("/albums", isShared="true")
-
-    def partners_sharing_with_me(self) -> list[dict]:
-        return self.get("/partners", direction="shared-with")
 
     # --- media -------------------------------------------------------------------------------
     def edits(self, asset_id: str) -> list:

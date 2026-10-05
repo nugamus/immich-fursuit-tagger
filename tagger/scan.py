@@ -37,16 +37,15 @@ def sync_users(db: sqlite3.Connection, clients: dict[str, Immich]) -> dict[str, 
 
 
 def visible_assets(cfg: Config, client: Immich, user_id: str, album_ids: list[str] | None = None) -> dict[str, tuple[dict, str]]:
-    """asset_id -> (asset, via) for one user, according to SCAN_MODE."""
+    """asset_id -> (asset, via) for one user: their own photos and shared albums (SCAN_MODE=all), or just the
+    albums in ALBUM_IDS (SCAN_MODE=albums)."""
     found: dict[str, tuple[dict, str]] = {}
 
     def add(asset: dict, via: str) -> None:
         if asset["ownerId"] == user_id:
             via = "own"
         elif via == "own":
-            via = "partner"
-        if via == "partner" and not cfg.include_partner:
-            return
+            return  # a partner's photo: only its owner can tag it, through their own key
         found.setdefault(asset["id"], (asset, via))
 
     mode = "albums" if album_ids else cfg.scan_mode
@@ -62,9 +61,6 @@ def visible_assets(cfg: Config, client: Immich, user_id: str, album_ids: list[st
                 log.debug("album %s not visible: %s", album_id, e)
     if mode == "all":
         for a in client.search_assets():
-            add(a, "own")
-    if mode == "smart":
-        for a in client.smart_search(cfg.smart_query, cfg.smart_limit):
             add(a, "own")
     return found
 

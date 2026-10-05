@@ -47,9 +47,6 @@ class Config:
     # What to scan
     scan_mode: str = field(default_factory=lambda: _env("SCAN_MODE", "all"))
     album_ids: list[str] = field(default_factory=lambda: _list("ALBUM_IDS"))
-    smart_query: str = field(default_factory=lambda: _env("SMART_QUERY", "fursuit"))
-    smart_limit: int = field(default_factory=lambda: int(_env("SMART_LIMIT", "500")))
-    include_partner: bool = field(default_factory=lambda: _bool("INCLUDE_PARTNER"))
 
     # Recognition. Defaults were tuned on a real 600-photo library; see the README for what each one trades off.
     min_score: float = field(default_factory=lambda: _float("MIN_SCORE", "0.5"))
@@ -73,11 +70,6 @@ class Config:
     # Schedule: a full pass at least every SCAN_INTERVAL_MIN; new uploads are noticed within POLL_INTERVAL_SEC.
     scan_interval_min: float = field(default_factory=lambda: _float("SCAN_INTERVAL_MIN", "60"))
     poll_interval_sec: float = field(default_factory=lambda: _float("POLL_INTERVAL_SEC", "120"))
-
-    # Housekeeping for Immich's own (human) people
-    share_people: bool = field(default_factory=lambda: _bool("SHARE_PEOPLE", "true"))
-    human_thumbnails: bool = field(default_factory=lambda: _bool("HUMAN_THUMBNAILS", "true"))
-    hide_background_pct: float = field(default_factory=lambda: _float("HIDE_BACKGROUND_PCT", "0"))
 
     @property
     def db_path(self) -> Path:

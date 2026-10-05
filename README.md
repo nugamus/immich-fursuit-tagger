@@ -16,7 +16,6 @@ everything it adds can be removed again with one command.
 - A `fursuit` tag on every photo with a recognised suit
 - Sharp thumbnails, picked from the clearest shot of each character
 - New uploads picked up within a couple of minutes; the models unload again when there's nothing to do
-- Optional: the same thumbnail and sharing treatment for Immich's regular (human) people
 
 Corrections you make in Immich stick. Delete a face and it stays deleted. Merge two people and the tagger merges
 its characters too, and from then on uses both sets of photos to recognise that suit. Move a face to someone
@@ -60,7 +59,7 @@ People who only look at shared albums don't need one.
 In Immich, go to **Account Settings → API Keys → New API Key** and tick these permissions:
 
 ```
-user.read  asset.read  asset.view  album.read  partner.read
+user.read  asset.read  asset.view  album.read
 person.read  person.create  person.update  person.delete  person.merge  person.reassign
 face.read  face.create  face.update  face.delete
 tag.read  tag.create  tag.asset  tag.delete
@@ -148,7 +147,7 @@ All settings are environment variables. The defaults were tuned on a real 600-ph
 | --- | --- | --- |
 | `IMMICH_URL` | `http://immich-server:2283` | Where Immich is |
 | `API_KEYS` | | `name=key` pairs, comma separated |
-| `SCAN_MODE` | `all` | `all`, `albums` (with `ALBUM_IDS`), or `smart` (CLIP search for `SMART_QUERY`) |
+| `SCAN_MODE` | `all` | `all` (own photos and shared albums) or `albums` (only `ALBUM_IDS`) |
 | `INFERENCE_DEVICE` | `auto` | `auto`, `openvino`, `cuda`, `rocm` or `cpu` |
 | `DRY_RUN` | `false` | Read only |
 | `TAG_NAME` | `fursuit` | Tag added to tagged photos; empty disables it |
@@ -161,9 +160,6 @@ All settings are environment variables. The defaults were tuned on a real 600-ph
 | `POLL_INTERVAL_SEC` | `120` | How often to look for new uploads |
 | `SCAN_INTERVAL_MIN` | `60` | A full pass at least this often, to pick up edits made in Immich |
 | `MODEL_TTL_MIN` | `10` | Unload the models after this long without work |
-| `SHARE_PEOPLE` | `true` | Also share Immich's human people with everyone in the cluster group |
-| `HUMAN_THUMBNAILS` | `true` | Give human people their sharpest face as thumbnail |
-| `HIDE_BACKGROUND_PCT` | `0` | Hide human people whose largest face is narrower than this % of the photo (try `4`) |
 
 If one character keeps getting split, raise `MAX_DISTANCE` a little. If different suits get mixed up, lower it.
 Splits are cheap to fix (one merge), mix-ups are not, so the defaults lean towards splitting.
@@ -178,7 +174,6 @@ Run them with `docker compose exec tagger python -m tagger <command>`.
 | `report --out FILE` | The HTML report described above |
 | `scan` | One read-only pass: detect and group, write nothing |
 | `write` | One write pass from what's already been scanned |
-| `people` | The human-people housekeeping on its own |
 | `undo` / `resume` | See [Undo](#undo) |
 | `bench` | Time the models on this machine |
 
