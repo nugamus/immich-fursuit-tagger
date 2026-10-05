@@ -53,13 +53,11 @@ class Immich:
         except ImmichError:
             return None
 
-    def activity(self) -> tuple[int, str | None]:
-        """Cheap fingerprint of what this user can see: (asset count, newest photo date). A change means new,
-        deleted or restored photos. One small request."""
-        r = self.post("/search/metadata", {"size": 1, "filter": {"type": {"eq": "IMAGE"}, "trashedAt": {"eq": None}},
-                                           "orderBy": {"field": "fileCreatedAt", "direction": "desc"}})["assets"]
-        newest = r["items"][0]["fileCreatedAt"] if r["items"] else None
-        return r.get("total", len(r["items"])), newest
+    def uploaded_since(self, since_iso: str, limit: int = 50) -> list[str]:
+        """IDs of images uploaded (createdAt, not photo date: old shoots get uploaded late) at/after since_iso."""
+        r = self.post("/search/metadata", {"size": limit, "filter": {
+            "type": {"eq": "IMAGE"}, "trashedAt": {"eq": None}, "createdAt": {"gte": since_iso}}})["assets"]
+        return [a["id"] for a in r["items"]]
 
     # --- asset selection ---------------------------------------------------------------------
     def search_assets(self, extra_filter: dict | None = None, page_size: int = 500) -> Iterator[dict]:

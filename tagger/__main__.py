@@ -140,8 +140,10 @@ def run(args) -> int:
     log = logging.getLogger("run")
     cfg, db, clients = _context()
     models = Models(cfg.models_dir, device=cfg.inference_device, threads=cfg.threads, ttl_min=cfg.model_ttl_min)
-    seen = None
+    from datetime import timedelta
+
     while True:
+        pass_started = datetime.now(timezone.utc)
         reason = None
         try:
             if paused(db):
@@ -156,20 +158,22 @@ def run(args) -> int:
             log.exception("pass failed")
         # Idle until photos change (cheap probe) or the periodic full pass is due. Models are only loaded when
         # there is something to process and are released after MODEL_TTL_MIN idle, freeing RAM for Immich.
+        # Look back a bit before the pass started so clock skew can't hide an upload; known IDs are ignored.
+        since = (pass_started - timedelta(minutes=10)).isoformat()
         deadline = time.monotonic() + cfg.scan_interval_min * 60
         while time.monotonic() < deadline:
             time.sleep(cfg.poll_interval_sec)
             models.release_if_idle()
             try:
-                now_seen = {label: c.activity() for label, c in clients.items()}
+                recent = {a for c in clients.values() for a in c.uploaded_since(since)}
             except Exception as e:  # Immich restarting etc.: just try again next poll
-                log.debug("activity probe failed: %s", e)
+                log.debug("upload probe failed: %s", e)
                 continue
-            if seen is not None and now_seen != seen:
-                log.info("new or removed photos detected; starting a pass")
-                seen = now_seen
+            known = {r[0] for r in db.execute(f"SELECT asset_id FROM assets WHERE asset_id IN ({','.join('?' * len(recent))})",
+                                              tuple(recent))} if recent else set()
+            if recent - known:
+                log.info("%d new photo(s) uploaded; starting a pass", len(recent - known))
                 break
-            seen = now_seen
 
 
 def health(args) -> int:
