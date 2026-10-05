@@ -103,6 +103,12 @@ MIGRATIONS = [
         WHERE character_id IN (SELECT merged_into FROM characters WHERE merged_into > 0);
     """,
     "DROP TABLE human_thumbs;",
+    """
+    ALTER TABLE assets ADD COLUMN file_stem TEXT;
+    ALTER TABLE assets ADD COLUMN copy_of TEXT;
+    ALTER TABLE detections ADD COLUMN copy_source INTEGER;
+    CREATE INDEX assets_file_stem ON assets(file_stem);
+    """,
 ]
 
 

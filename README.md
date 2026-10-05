@@ -29,6 +29,8 @@ else and it follows.
    head trained to tell suits apart.
 3. **Group.** Heads with close fingerprints become a character. Two heads in the same photo are never the same
    character, and shots from the same session can vouch for each other, which catches side and back views.
+   Edited copies of a photo (say, a friend's JPEG export of your RAW file) are recognised by their file name and
+   matching heads, and simply get the same characters as the original.
 4. **Write.** Characters become Immich people. Faces are added through the API by each photo's owner.
 
 Both models come from [aibyou0830/immich-ml-furry](https://github.com/aibyou0830/immich-ml-furry) and run as ONNX,

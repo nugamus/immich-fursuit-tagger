@@ -18,6 +18,7 @@ from tagger.runtime import Models
 
 log = logging.getLogger("scan")
 CROP_THUMB_PX = 160
+COPY_MAX_DISTANCE = 0.10  # heads in edited copies of one photo measured 0.01-0.08 from the original's
 
 
 def sync_users(db: sqlite3.Connection, clients: dict[str, Immich]) -> dict[str, str]:
@@ -76,14 +77,21 @@ def change_key(asset: dict) -> str:
     return f"{asset.get('thumbhash')}|{int(bool(asset.get('isEdited')))}"
 
 
+def file_stem(name: str | None) -> str | None:
+    return Path(name).stem.lower() if name else None
+
+
 def record_access(db: sqlite3.Connection, label: str, assets: dict[str, tuple[dict, str]]) -> None:
     db.execute("BEGIN")
     for asset_id, (a, via) in assets.items():
-        db.execute("INSERT INTO assets(asset_id, owner_id, taken_at, updated_at, edited) VALUES(?, ?, ?, ?, ?) "
-                   "ON CONFLICT(asset_id) DO UPDATE SET taken_at = excluded.taken_at, edited = excluded.edited, "
+        # A confirmed copy keeps its original's capture time (exports often carry a placeholder date).
+        db.execute("INSERT INTO assets(asset_id, owner_id, taken_at, updated_at, edited, file_stem) VALUES(?, ?, ?, ?, ?, ?) "
+                   "ON CONFLICT(asset_id) DO UPDATE SET edited = excluded.edited, file_stem = excluded.file_stem, "
+                   "taken_at = CASE WHEN assets.copy_of IS NULL THEN excluded.taken_at ELSE assets.taken_at END, "
                    "status = CASE WHEN assets.updated_at IS NOT excluded.updated_at THEN 'new' ELSE assets.status END, "
                    "updated_at = excluded.updated_at",
-                   (asset_id, a["ownerId"], taken_at(a), change_key(a), int(bool(a.get("isEdited")))))
+                   (asset_id, a["ownerId"], taken_at(a), change_key(a), int(bool(a.get("isEdited"))),
+                    file_stem(a.get("originalFileName"))))
         db.execute("INSERT INTO asset_access(asset_id, user_label, via) VALUES(?, ?, ?) "
                    "ON CONFLICT DO UPDATE SET via = excluded.via", (asset_id, label, via))
     db.execute("COMMIT")
@@ -252,9 +260,51 @@ def _session_pass(db: sqlite3.Connection, cfg: Config) -> int:
     return assigned
 
 
+def _copy_pass(db: sqlite3.Connection) -> int:
+    """Edited copies of one photo, e.g. a friend's JPEG export of your RAW, share a file name. A pair only counts as a
+    copy when every head on the photo with fewer heads matches one on the other almost exactly, so two unrelated
+    photos that happen to share a camera file name are never linked. Unwritten heads on the copy then mirror the
+    original: same character, same rejection, same capture time."""
+    pairs = db.execute("SELECT a.asset_id, b.asset_id FROM assets a JOIN assets b "
+                       "ON a.file_stem = b.file_stem AND a.asset_id < b.asset_id").fetchall()
+    synced = 0
+    for x, y in pairs:
+        # The original is the one taken first; once linked, a copy stays the copy even though it now shares the date.
+        (orig, orig_t, _), (copy, _, _) = sorted(db.execute(
+            "SELECT asset_id, taken_at, copy_of FROM assets WHERE asset_id IN (?, ?)", (x, y)).fetchall(),
+            key=lambda r: (r[2] is not None, r[1] or "9999", r[0]))
+        dets = {a: db.execute("SELECT id, status, character_id, embedding, face_id FROM detections "
+                              "WHERE asset_id = ? AND embedding IS NOT NULL ORDER BY id", (a,)).fetchall()
+                for a in (orig, copy)}
+        if not dets[orig] or not dets[copy]:
+            continue
+        eo = np.stack([np.frombuffer(r["embedding"], np.float32) for r in dets[orig]])
+        ec = np.stack([np.frombuffer(r["embedding"], np.float32) for r in dets[copy]])
+        dist = 1.0 - ec @ eo.T
+        matched = []
+        while dist.size and dist.min() <= COPY_MAX_DISTANCE:
+            i, j = np.unravel_index(np.argmin(dist), dist.shape)
+            matched.append((dets[copy][i], dets[orig][j]))
+            dist[i, :] = dist[:, j] = np.inf
+        if len(matched) < min(len(eo), len(ec)):
+            continue
+        db.execute("UPDATE assets SET copy_of = ?, taken_at = ? WHERE asset_id = ?", (orig, orig_t, copy))
+        for c, o in matched:
+            if c["face_id"] is not None:
+                continue  # already in Immich: the user's edits there decide from now on
+            # 'foreign' means the user gave the original's face to someone the tagger doesn't manage: stay out
+            status, char = (o["status"], o["character_id"]) if o["status"] != "foreign" else ("pending", None)
+            if (c["status"], c["character_id"]) != (status, char):
+                synced += 1
+            db.execute("UPDATE detections SET status = ?, character_id = ?, copy_source = ?, via_burst = 0 WHERE id = ?",
+                       (status, char, o["id"], c["id"]))
+    return synced
+
+
 def _cluster_pass(db: sqlite3.Connection, cfg: Config) -> int:
+    # Copies of a photo are not independent evidence for a new character.
     rows = db.execute("SELECT id, asset_id, embedding FROM detections WHERE status = 'pending' AND is_reference "
-                      "AND embedding IS NOT NULL").fetchall()
+                      "AND embedding IS NOT NULL AND copy_source IS NULL").fetchall()
     if len(rows) < cfg.min_faces:
         return 0
     emb = np.stack([np.frombuffer(r["embedding"], np.float32) for r in rows])
@@ -275,6 +325,7 @@ def _cluster_pass(db: sqlite3.Connection, cfg: Config) -> int:
 
 def recognize(db: sqlite3.Connection, cfg: Config) -> dict:
     db.execute("BEGIN")
+    _copy_pass(db)
     stats = {"matched": _assign_pass(db, cfg)}
     stats["new_characters"] = _cluster_pass(db, cfg)
     if stats["new_characters"]:
@@ -283,6 +334,7 @@ def recognize(db: sqlite3.Connection, cfg: Config) -> dict:
     if stats["session"]:
         stats["matched"] += _assign_pass(db, cfg)
     stats["burst"] = _burst_pass(db, cfg)
+    stats["copies"] = _copy_pass(db)
     # Characters left without members (e.g. after re-detection) and never written to Immich are dropped.
     db.execute("DELETE FROM characters WHERE person_group_id IS NULL AND id NOT IN "
                "(SELECT DISTINCT character_id FROM detections WHERE character_id IS NOT NULL)")
