@@ -88,7 +88,7 @@ def test_embedder_parity(manifest):
             out = backbone(pixel_values=torch.stack([transform(c) for c in crops]))
             feats = out.pooler_output if out.pooler_output is not None else out.last_hidden_state[:, 0, :]
             ref = torch.nn.functional.normalize(projector(feats), p=2, dim=-1).numpy()
-        got = embedder._run(crops)  # raw model output; flip TTA is on top of this
+        got = embedder(crops)
         worst = min(worst, float((ref * got).sum(axis=1).min()))
     print(f"embedder worst cosine similarity {worst:.5f}")
     assert worst >= 0.999
