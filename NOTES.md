@@ -246,3 +246,20 @@ Sandbox test (users tagger-test-a and tagger-test-b, 16 Commons photos, an album
 - The second and third passes were no-ops.
 - A deleted a face: it became a rejection and was not recreated. B renamed the person: A sees the new name, and neither user's thumbnail locked. A picked a thumbnail: only A locked.
 - `undo` removed 9 faces, 1 person, the tag on 10 photos and the tag itself, then paused. `resume` followed by `run` recreated everything except the rejected face.
+
+# M5 (partial) Reconciliation (2026-10-05)
+
+`Writer.reconcile()` runs at the start of every write pass and follows the user's edits in Immich:
+
+| User action | Tagger response |
+|---|---|
+| Deletes or un-assigns a tagger face | Detection becomes `rejected` permanently |
+| Moves a tagger face to another tagger person | Detection moves to that character, which feeds that character's gallery |
+| Moves a tagger face to a non-tagger person | Detection becomes `foreign`; never touched again, and `undo` won't delete it |
+| Merges tagger people | The vanished person's character gets `merged_into` the destination, and its unwritten detections follow |
+| Deletes a tagger person outright | Its detections are rejected and the character is marked `merged_into = -1` |
+| Renames | Name is copied into `characters.name` (Immich propagates the name itself) |
+
+Sandbox-verified: a merge was followed with 3 detections moved; a face moved to "Someone Else" became `foreign`; a deleted face became `rejected`; repeat passes were no-ops. Also new: a failing face write no longer aborts the whole pass.
+
+Production (same day): 8 people, 524 faces and 473 tagged photos were written to the real library, with sharing to Nugamus. Toast and Mir are pending cluster-group invites; the tagger shares with everyone in the cluster group once they join. Human-people thumbnails are now chosen by size × exposure × sharpness, after "largest face" picked a nearly black frame for Gorbz.

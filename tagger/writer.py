@@ -70,25 +70,76 @@ class Writer:
         self.owners = _owner_labels(db)               # immich user id -> label
         self.ids = {v: k for k, v in self.owners.items()}  # label -> immich user id
 
-    # --- reconcile what the user changed in Immich (minimal M4 subset; full table in M5) -------------
-    def reconcile_deleted_faces(self) -> int:
-        """A tagger face the user deleted in Immich becomes a permanent rejection (PLAN.md 7.1)."""
-        rejected = 0
-        rows = self.db.execute("SELECT id, asset_id, face_id, face_label FROM detections WHERE face_id IS NOT NULL").fetchall()
+    # --- reconcile what the user changed in Immich (PLAN.md 7.1: Immich edits are the ground truth) ---
+    def reconcile(self) -> dict:
+        """Read back every tagger face and person and follow the user's edits:
+        - face deleted or un-assigned        -> detection rejected for good
+        - face moved to another tagger person -> detection moves to that character (and teaches its gallery)
+        - face moved to a non-tagger person   -> detection becomes 'foreign': never touched again
+        - person gone (merged/deleted)        -> character merged into wherever its faces went
+        - person renamed                      -> name recorded"""
+        stats = {"rejected": 0, "moved": 0, "foreign": 0, "merged": 0}
+        group_to_char = {r[0]: r[1] for r in self.db.execute(
+            "SELECT person_group_id, id FROM characters WHERE person_group_id IS NOT NULL AND merged_into IS NULL")}
+        rows = self.db.execute("SELECT d.id, d.asset_id, d.face_id, d.face_label, d.character_id, c.person_group_id "
+                               "FROM detections d JOIN characters c ON c.id = d.character_id "
+                               "WHERE d.face_id IS NOT NULL AND d.status = 'assigned'").fetchall()
         by_asset: dict[tuple[str, str], list] = {}
         for r in rows:
             by_asset.setdefault((r["asset_id"], r["face_label"]), []).append(r)
+        moved_to: dict[int, dict[int, int]] = {}  # old character -> {new character: count}
         for (asset_id, label), dets in by_asset.items():
             try:
-                present = {f["id"] for f in self.clients[label].get("/faces", id=asset_id)}
+                present = {f["id"]: (f.get("person") or {}).get("id") for f in self.clients[label].get("/faces", id=asset_id)}
             except ImmichError as e:
                 log.debug("faces of %s: %s", asset_id, e)
                 continue
             for d in dets:
-                if d["face_id"] not in present:
-                    self.db.execute("UPDATE detections SET status = 'rejected', face_id = NULL WHERE id = ?", (d["id"],))
-                    rejected += 1
-        return rejected
+                person = present.get(d["face_id"], "missing")
+                if person == d["person_group_id"]:
+                    continue
+                if person in ("missing", None):
+                    self.db.execute("UPDATE detections SET status = 'rejected', face_id = CASE WHEN ? THEN NULL "
+                                    "ELSE face_id END WHERE id = ?", (person == "missing", d["id"]))
+                    stats["rejected"] += 1
+                elif person in group_to_char:
+                    new = group_to_char[person]
+                    self.db.execute("UPDATE detections SET character_id = ?, via_burst = 0 WHERE id = ?", (new, d["id"]))
+                    moved_to.setdefault(d["character_id"], {}).setdefault(new, 0)
+                    moved_to[d["character_id"]][new] += 1
+                    stats["moved"] += 1
+                else:
+                    self.db.execute("UPDATE detections SET status = 'foreign' WHERE id = ?", (d["id"],))
+                    stats["foreign"] += 1
+
+        for c in self.db.execute("SELECT id, person_group_id, owner_label, name FROM characters "
+                                 "WHERE person_group_id IS NOT NULL AND merged_into IS NULL").fetchall():
+            try:
+                person = self.clients[c["owner_label"]].get(f"/people/{c['person_group_id']}")
+            except ImmichError as e:
+                if "404" not in str(e) and "400" not in str(e):
+                    continue  # Immich hiccup, not a deletion
+                person = None
+            if person is not None:
+                if person.get("name") != c["name"]:
+                    self.db.execute("UPDATE characters SET name = ? WHERE id = ?", (person.get("name"), c["id"]))
+                continue
+            targets = moved_to.get(c["id"], {})
+            if targets:
+                into = max(targets, key=targets.get)
+                self.db.execute("UPDATE characters SET merged_into = ? WHERE id = ?", (into, c["id"]))
+                # unwritten detections and references follow, so future photos of either view match `into`
+                self.db.execute("UPDATE detections SET character_id = ? WHERE character_id = ? AND status = 'assigned'",
+                                (into, c["id"]))
+                log.info("character %d merged into %d (followed Immich merge)", c["id"], into)
+                stats["merged"] += 1
+            else:
+                # the person was deleted outright: the user doesn't want this character
+                self.db.execute("UPDATE detections SET status = 'rejected' WHERE character_id = ? AND status = 'assigned'",
+                                (c["id"],))
+                self.db.execute("UPDATE characters SET merged_into = -1 WHERE id = ?", (c["id"],))
+                log.info("character %d's person was deleted in Immich; rejected for good", c["id"])
+        return stats
 
     # --- people ------------------------------------------------------------------------------------
     def ensure_people(self) -> int:
@@ -138,7 +189,7 @@ class Writer:
 
     # --- faces -------------------------------------------------------------------------------------
     def write_faces(self) -> dict:
-        stats = {"written": 0, "overlap": 0, "not_owned": 0}
+        stats = {"written": 0, "not_owned": 0}
         rows = self.db.execute(
             "SELECT d.*, a.owner_id, c.person_group_id FROM detections d JOIN assets a USING(asset_id) "
             "JOIN characters c ON c.id = d.character_id "
@@ -149,34 +200,39 @@ class Writer:
             if label is None:
                 stats["not_owned"] += 1  # only the owner may add faces (Immich: asset.update is owner-only)
                 continue
-            client = self.clients[label]
-            existing = client.get("/faces", id=d["asset_id"])
-            box = _det_box(d)
-            ours = {r[0] for r in self.db.execute("SELECT face_id FROM detections WHERE face_id IS NOT NULL")}
-            clash = [f for f in existing if f["id"] not in ours and
-                     iou(np.array(box), np.array([_norm_box(f)]))[0] > self.cfg.overlap_iou]
-            if clash:
-                # buffalo_l or the user already boxed this region; OVERLAP_POLICY=replace is reserved for M5
-                self.db.execute("UPDATE detections SET skip_reason = 'overlap' WHERE id = ?", (d["id"],))
-                stats["overlap"] += 1
-                continue
-            if self.cfg.dry_run:
-                stats["written"] += 1
-                continue
-            before = {f["id"] for f in existing}
-            client.post("/faces", {
-                "assetId": d["asset_id"], "personId": d["person_group_id"],
-                "imageWidth": d["img_w"], "imageHeight": d["img_h"],
-                "x": round(d["x"]), "y": round(d["y"]), "width": round(d["w"]), "height": round(d["h"])})
-            new = [f for f in client.get("/faces", id=d["asset_id"])
-                   if f["id"] not in before and (f.get("person") or {}).get("id") == d["person_group_id"]]
-            if not new:
-                log.warning("face for detection %d created but not found on asset %s", d["id"], d["asset_id"])
-                continue
-            self.db.execute("UPDATE detections SET face_id = ?, face_label = ?, written_at = ? WHERE id = ?",
-                            (new[0]["id"], label, now(), d["id"]))
-            stats["written"] += 1
+            try:
+                stats["written"] += self._write_face(d, label)
+            except ImmichError as e:
+                log.warning("detection %d on %s: %s", d["id"], d["asset_id"], e)
+                stats.setdefault("failed", 0)
+                stats["failed"] += 1
         return stats
+
+    def _write_face(self, d: sqlite3.Row, label: str) -> int:
+        """1 if a face was written (or would be, in a dry run), else 0."""
+        client = self.clients[label]
+        existing = client.get("/faces", id=d["asset_id"])
+        ours = {r[0] for r in self.db.execute("SELECT face_id FROM detections WHERE face_id IS NOT NULL")}
+        box = np.array(_det_box(d))
+        if any(f["id"] not in ours and iou(box, np.array([_norm_box(f)]))[0] > self.cfg.overlap_iou for f in existing):
+            # buffalo_l or the user already boxed this region: leave it alone
+            self.db.execute("UPDATE detections SET skip_reason = 'overlap' WHERE id = ?", (d["id"],))
+            return 0
+        if self.cfg.dry_run:
+            return 1
+        before = {f["id"] for f in existing}
+        client.post("/faces", {
+            "assetId": d["asset_id"], "personId": d["person_group_id"],
+            "imageWidth": d["img_w"], "imageHeight": d["img_h"],
+            "x": round(d["x"]), "y": round(d["y"]), "width": round(d["w"]), "height": round(d["h"])})
+        new = [f for f in client.get("/faces", id=d["asset_id"])
+               if f["id"] not in before and (f.get("person") or {}).get("id") == d["person_group_id"]]
+        if not new:
+            log.warning("face for detection %d created but not found on asset %s", d["id"], d["asset_id"])
+            return 0
+        self.db.execute("UPDATE detections SET face_id = ?, face_label = ?, written_at = ? WHERE id = ?",
+                        (new[0]["id"], label, now(), d["id"]))
+        return 1
 
     # --- tags --------------------------------------------------------------------------------------
     def _tag_id(self, label: str) -> str:
@@ -262,7 +318,7 @@ class Writer:
 
     # --- one pass ----------------------------------------------------------------------------------
     def sync(self) -> dict:
-        stats = {"rejected_by_user": self.reconcile_deleted_faces(), "people_created": self.ensure_people()}
+        stats = {"reconciled": self.reconcile(), "people_created": self.ensure_people()}
         stats.update(self.write_faces())
         stats["tagged"] = self.write_tags()
         stats["thumbnails"] = self.write_thumbnails()
@@ -278,7 +334,9 @@ def undo(cfg: Config, db: sqlite3.Connection, clients: dict[str, Immich], since:
     then pause the loop so it doesn't immediately recreate them. Never touches anything it didn't create."""
     since = since or "0000"
     stats = {"faces": 0, "people": 0, "tagged_assets": 0, "tags": 0}
-    faces = db.execute("SELECT id, face_id, face_label FROM detections WHERE face_id IS NOT NULL AND written_at >= ?"
+    # 'foreign' faces were moved by the user onto one of their own people: they're the user's now, never ours to delete
+    faces = db.execute("SELECT id, face_id, face_label FROM detections WHERE face_id IS NOT NULL AND written_at >= ? "
+                       "AND status != 'foreign'"
                        + (" AND face_label = ?" if user else ""), (since, user) if user else (since,)).fetchall()
     for f in faces:
         if not dry_run:
