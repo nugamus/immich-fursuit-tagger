@@ -34,11 +34,16 @@ class Config:
 
     min_score: float = field(default_factory=lambda: float(_env("MIN_SCORE", "0.5")))
     max_distance: float = field(default_factory=lambda: float(_env("MAX_DISTANCE", "0.15")))
+    # DBSCAN eps for founding new characters from the pending pool. M3 review on 588 real photos: 0.20 found two more
+    # real suits but also formed a junk cluster of back-of-head shots, so the default matches MAX_DISTANCE.
+    cluster_eps: float = field(default_factory=lambda: float(_env("CLUSTER_EPS", "0.15")))
     min_faces: int = field(default_factory=lambda: int(_env("MIN_FACES", "3")))
     ref_quality_min: float = field(default_factory=lambda: float(_env("REF_QUALITY_MIN", "0.5")))
+    # Only confident heads may found a new character (low-score detections are partial heads or look-alikes, e.g. geese).
+    ref_score_min: float = field(default_factory=lambda: float(_env("REF_SCORE_MIN", "0.8")))
     knn: int = field(default_factory=lambda: int(_env("KNN", "5")))
     burst_window_min: float = field(default_factory=lambda: float(_env("BURST_WINDOW_MIN", "10")))
-    burst_margin: float = field(default_factory=lambda: float(_env("BURST_MARGIN", "0.05")))
+    burst_margin: float = field(default_factory=lambda: float(_env("BURST_MARGIN", "0.03")))
 
     dry_run: bool = field(default_factory=lambda: _env("DRY_RUN", "false").lower() == "true")
 

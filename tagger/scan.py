@@ -11,7 +11,7 @@ import numpy as np
 from tagger.config import Config
 from tagger.embedder import crop
 from tagger.immich import Immich, ImmichError
-from tagger.matching import burst_assign, dbscan, match
+from tagger.matching import burst_assign, dbscan, match, split_conflicts
 from tagger.quality import quality
 from tagger.runtime import Models
 
@@ -128,7 +128,7 @@ def process_asset(db: sqlite3.Connection, cfg: Config, models: Models, client: I
                 "INSERT INTO detections(asset_id, x, y, w, h, img_w, img_h, score, quality, is_reference, embedding) "
                 "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (aid, float(b[0]), float(b[1]), float(b[2] - b[0]), float(b[3] - b[1]), img.width, img.height,
-                 float(s), q, int(q >= cfg.ref_quality_min), e.astype(np.float32).tobytes()))
+                 float(s), q, int(is_reference(cfg, float(s), q)), e.astype(np.float32).tobytes()))
             thumb = c.copy()
             thumb.thumbnail((CROP_THUMB_PX, CROP_THUMB_PX))
             thumb.save(crops_dir / f"{cur.lastrowid}.jpg", quality=85)
@@ -140,6 +140,18 @@ def process_asset(db: sqlite3.Connection, cfg: Config, models: Models, client: I
 
 # --- recognition ---------------------------------------------------------------------------------
 
+def is_reference(cfg: Config, score: float, quality_: float) -> bool:
+    return quality_ >= cfg.ref_quality_min and score >= cfg.ref_score_min
+
+
+def _taken(db: sqlite3.Connection) -> dict[str, set[int]]:
+    """asset -> characters already assigned in it (a photo can't show one character twice)."""
+    taken: dict[str, set[int]] = {}
+    for a, c in db.execute("SELECT asset_id, character_id FROM detections WHERE status = 'assigned'"):
+        taken.setdefault(a, set()).add(c)
+    return taken
+
+
 def _gallery(db: sqlite3.Connection) -> tuple[np.ndarray, np.ndarray]:
     rows = db.execute("SELECT embedding, character_id FROM detections WHERE status = 'assigned' AND is_reference "
                       "AND NOT via_burst AND embedding IS NOT NULL").fetchall()
@@ -150,16 +162,18 @@ def _gallery(db: sqlite3.Connection) -> tuple[np.ndarray, np.ndarray]:
 
 def _assign_pass(db: sqlite3.Connection, cfg: Config) -> int:
     gallery, chars = _gallery(db)
+    taken = _taken(db)
     assigned = 0
-    pending = db.execute("SELECT id, embedding, is_reference FROM detections WHERE status = 'pending' "
+    pending = db.execute("SELECT id, asset_id, embedding, is_reference FROM detections WHERE status = 'pending' "
                          "AND embedding IS NOT NULL ORDER BY quality DESC").fetchall()
     for row in pending:
         e = np.frombuffer(row["embedding"], np.float32)
         m = match(e, gallery, chars, cfg.max_distance, cfg.knn)
         db.execute("UPDATE detections SET distance = ? WHERE id = ?", (None if m.distance == float("inf") else m.distance, row["id"]))
-        if m.character_id is None:
+        if m.character_id is None or m.character_id in taken.get(row["asset_id"], ()):
             continue
         db.execute("UPDATE detections SET character_id = ?, status = 'assigned' WHERE id = ?", (m.character_id, row["id"]))
+        taken.setdefault(row["asset_id"], set()).add(m.character_id)
         assigned += 1
         if row["is_reference"]:
             gallery, chars = np.vstack([gallery, e]), np.append(chars, m.character_id)
@@ -168,6 +182,7 @@ def _assign_pass(db: sqlite3.Connection, cfg: Config) -> int:
 
 def _burst_pass(db: sqlite3.Connection, cfg: Config) -> int:
     gallery, chars = _gallery(db)
+    taken = _taken(db)
     window = timedelta(minutes=cfg.burst_window_min)
     assigned = 0
     rows = db.execute("SELECT d.id, d.asset_id, d.embedding, a.taken_at FROM detections d JOIN assets a USING(asset_id) "
@@ -180,7 +195,8 @@ def _burst_pass(db: sqlite3.Connection, cfg: Config) -> int:
             (row["asset_id"], (t - window).isoformat(), (t + window).isoformat()))}
         m = match(np.frombuffer(row["embedding"], np.float32), gallery, chars, cfg.max_distance, cfg.knn)
         char = burst_assign(m, cfg.max_distance, cfg.burst_margin, nearby)
-        if char is not None:
+        if char is not None and char not in taken.get(row["asset_id"], ()):
+            taken.setdefault(row["asset_id"], set()).add(char)
             db.execute("UPDATE detections SET character_id = ?, status = 'assigned', via_burst = 1, distance = ? "
                        "WHERE id = ?", (char, m.distance, row["id"]))
             assigned += 1
@@ -188,12 +204,13 @@ def _burst_pass(db: sqlite3.Connection, cfg: Config) -> int:
 
 
 def _cluster_pass(db: sqlite3.Connection, cfg: Config) -> int:
-    rows = db.execute("SELECT id, embedding FROM detections WHERE status = 'pending' AND is_reference "
+    rows = db.execute("SELECT id, asset_id, embedding FROM detections WHERE status = 'pending' AND is_reference "
                       "AND embedding IS NOT NULL").fetchall()
     if len(rows) < cfg.min_faces:
         return 0
     emb = np.stack([np.frombuffer(r["embedding"], np.float32) for r in rows])
-    labels = dbscan(emb, cfg.max_distance, cfg.min_faces)
+    labels = dbscan(emb, cfg.cluster_eps, cfg.min_faces)
+    labels = split_conflicts(emb, np.array([r["asset_id"] for r in rows]), labels, cfg.min_faces)
     created = 0
     for label in sorted(set(labels) - {-1}):
         idx = np.flatnonzero(labels == label)
@@ -216,6 +233,20 @@ def recognize(db: sqlite3.Connection, cfg: Config) -> dict:
     stats["burst"] = _burst_pass(db, cfg)
     db.execute("COMMIT")
     return stats
+
+
+def recluster(db: sqlite3.Connection, cfg: Config) -> dict:
+    """Dry-run threshold tuning: forget all characters and recognize again from the stored embeddings."""
+    if db.execute("SELECT 1 FROM characters WHERE person_group_id IS NOT NULL").fetchone():
+        raise RuntimeError("characters are already linked to Immich people; recluster would orphan them")
+    db.execute("BEGIN")
+    for row in db.execute("SELECT id, score, quality FROM detections").fetchall():
+        db.execute("UPDATE detections SET is_reference = ? WHERE id = ?", (int(is_reference(cfg, row[1], row[2])), row[0]))
+    db.execute("UPDATE detections SET character_id = NULL, distance = NULL, via_burst = 0, status = 'pending' "
+               "WHERE status = 'assigned'")
+    db.execute("DELETE FROM characters")
+    db.execute("COMMIT")
+    return recognize(db, cfg)
 
 
 def scan_once(cfg: Config, db: sqlite3.Connection, models: Models, clients: dict[str, Immich],

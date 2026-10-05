@@ -56,3 +56,16 @@ def test_dbscan_needs_min_samples_and_separates_clusters():
     labels = dbscan(emb, eps=0.15, min_samples=3)
     assert len(set(labels[:3])) == 1 and labels[0] != -1
     assert list(labels[3:]) == [-1, -1, -1]  # B has only 2 faces, the last point is alone
+
+
+def test_split_conflicts_separates_two_characters_chained_in_one_cluster():
+    from tagger.matching import split_conflicts
+
+    # Two suits photographed together: each photo has one A head and one B head, DBSCAN chained them into one cluster.
+    emb = np.stack([near(A, 0.03, i) for i in range(4)] + [near(B, 0.03, 10 + i) for i in range(4)])
+    groups = np.array(["p1", "p2", "p3", "p4", "p1", "p2", "p3", "p4"])
+    labels = split_conflicts(emb, groups, np.zeros(8, dtype=int), min_samples=3)
+    assert len(set(labels[:4])) == 1 and len(set(labels[4:])) == 1 and labels[0] != labels[4]
+    # Too small after the split -> noise.
+    labels = split_conflicts(emb[[0, 1, 4, 5]], groups[[0, 1, 4, 5]], np.zeros(4, dtype=int), min_samples=3)
+    assert list(labels) == [-1, -1, -1, -1]

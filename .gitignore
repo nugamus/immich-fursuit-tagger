@@ -4,3 +4,7 @@
 __pycache__/
 models/
 work/
+*.yml.snapshot
+/zs*.yml
+/custom.yml
+/home.yml

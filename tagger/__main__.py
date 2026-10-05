@@ -80,6 +80,16 @@ def scan(args) -> int:
     return 0
 
 
+def recluster(args) -> int:
+    from tagger import state
+    from tagger.config import Config
+    from tagger.scan import recluster as run
+
+    cfg = Config()
+    print(run(state.connect(cfg.db_path), cfg))
+    return 0
+
+
 def report(args) -> int:
     from tagger import report as rep
     from tagger import state
@@ -107,6 +117,8 @@ def main(argv=None) -> int:
     p.add_argument("--album", action="append", help="limit to this album ID (repeatable)")
     p.add_argument("--limit", type=int, help="process at most N assets")
     p.set_defaults(func=scan)
+    p = sub.add_parser("recluster", help="dry run only: redo recognition from stored embeddings with current thresholds")
+    p.set_defaults(func=recluster)
     p = sub.add_parser("report", help="write the HTML dry-run report")
     p.add_argument("--out", default="/data/report.html")
     p.set_defaults(func=report)

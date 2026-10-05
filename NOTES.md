@@ -188,8 +188,15 @@ Still open: merge semantics across shared persons (`POST /people/merge`). This g
 
 That works out to about 1 s per photo with one head on the iGPU, or about 10 minutes for a 600-photo library. Still to check: that FP16 on the GPU doesn't shift embeddings (compare against CPU during the M3 dry run).
 
-# M3 Dry run (in progress)
+# M3 Dry run (2026-10-05) ⏸ threshold review
 
-- `tagger scan --once [--album ID] [--limit N]` runs the per-user access scan, detection, quality scoring, embedding and recognition (gallery k-NN, then clustering of the pending pool, then burst context). `tagger report --out report.html` writes a self-contained HTML report with a distance histogram. No Immich writes.
-- Smoke test against the test users: 16 CC Commons fursuit photos plus 6 synthetic photos. Results: 15 heads; one character, 10 crops of the same suit, at intra-cluster distances 0.03–0.13. Five pending: other suits, and two back-of-head views of the same suit at 0.47–0.48. Every non-match was at 0.24 or more, so 0.15 sits in a clear gap. A second scan processed 0 assets (idempotent).
-- Quality scores came out at 0.87–0.96 on these sharp Commons photos. Calibrate `REF_QUALITY_MIN` on the real library.
+- `tagger scan --once [--album ID] [--limit N]` runs the per-user access scan, detection, quality scoring, embedding and recognition (gallery k-NN, then clustering of the pending pool, then burst context). `tagger recluster` redoes recognition from the stored embeddings with the current thresholds (dry run only). `tagger report --out report.html` writes a self-contained report. No Immich writes.
+- Full library on the N100 iGPU: 588 photos in about 8 minutes, 0 errors. A CPU run on the desktop found 565 heads against the iGPU's 567, so FP16 on the iGPU is fine.
+
+Problems found on the real library, and their fixes:
+1. **Two suits that pose together were merged** (purple suit and grey/white husky; 33 photos had both in one "character"). DBSCAN's single linkage chained them through crops containing parts of both heads. Fix: a **same-photo cannot-link rule**. `split_conflicts()` splits any cluster holding two detections from one photo (2-means, with the conflicting pair pinned to opposite sides), and the match and burst passes never give a character to two heads in one photo.
+2. **Geese became a character.** The detector fires on geese with scores of 0.51–0.6, against a median of 0.94 for real heads. Fix: `REF_SCORE_MIN=0.8`, so only confident heads can found a character or act as gallery references. Low-score heads can still join an existing character.
+3. **Burst context was too loose.** About 10 of 15 burst assignments were right; the misses sat at distance 0.18–0.19. `BURST_MARGIN` was lowered from 0.05 to 0.03.
+4. Founding with `CLUSTER_EPS=0.20` found two more real suits (an orange fox and a green/brown one) but also built a 27-crop junk cluster of back-of-head shots. The default stays at 0.15, and `CLUSTER_EPS` remains configurable.
+
+Final defaults on the real library: 7 characters (husky 255, teal deer 114, purple 96, plus 7, 5, 4 and 4 crops). No photo has a character twice. 39–50 heads stay pending (other suits, geese, back-of-head shots). Reviewing the 36 lowest-quality crops of each character found about 2 wrong crops in the purple suit; the rest were correct or ambiguous back/side views. Mistakes cluster in low-quality crops, and deleting a face in Immich will mark it rejected for good (M4).

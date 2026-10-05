@@ -37,6 +37,45 @@ def burst_assign(m: Match, max_distance: float, margin: float, burst_chars: set[
     return None
 
 
+def split_conflicts(embeddings: np.ndarray, groups: np.ndarray, labels: np.ndarray, min_samples: int) -> np.ndarray:
+    """One photo can't show the same character twice. A cluster holding two detections from the same photo
+    (`groups` = asset id per row) chained two characters together: split it 2-means style, seeded by the
+    most distant same-photo pair (pinned to opposite sides), until no cluster has a conflict.
+    Clusters that end up smaller than min_samples become noise."""
+    labels = labels.copy()
+    next_label = labels.max() + 1 if len(labels) else 0
+    queue = [lab for lab in set(labels.tolist()) if lab != -1]
+    while queue:
+        lab = queue.pop()
+        idx = np.flatnonzero(labels == lab)
+        best = None
+        for g in set(groups[idx].tolist()):
+            members = idx[groups[idx] == g]
+            for a in range(len(members)):
+                for b in range(a + 1, len(members)):
+                    d = 1.0 - float(embeddings[members[a]] @ embeddings[members[b]])
+                    if best is None or d > best[0]:
+                        best = (d, members[a], members[b])
+        if best is None:
+            if len(idx) < min_samples:
+                labels[idx] = -1
+            continue
+        _, i, j = best
+        seeds = np.stack([embeddings[i], embeddings[j]])
+        for _ in range(10):
+            side = np.argmax(embeddings[idx] @ seeds.T, axis=1)
+            side[idx == i], side[idx == j] = 0, 1
+            new = np.stack([embeddings[idx[side == s]].mean(axis=0) for s in (0, 1)])
+            new /= np.linalg.norm(new, axis=1, keepdims=True)
+            if np.allclose(new, seeds):
+                break
+            seeds = new
+        labels[idx[side == 1]] = next_label
+        queue += [lab, next_label]
+        next_label += 1
+    return labels
+
+
 def dbscan(embeddings: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
     """Cosine DBSCAN. Returns a cluster label per row, -1 for noise. min_samples counts the point itself.
     ponytail: O(n^2) distance matrix; fine for a few thousand pending crops, use an ANN index beyond that."""
