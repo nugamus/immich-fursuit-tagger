@@ -97,6 +97,11 @@ MIGRATIONS = [
     ALTER TABLE human_thumbs ADD COLUMN name TEXT;
     ALTER TABLE human_thumbs ADD COLUMN locked INTEGER NOT NULL DEFAULT 0;
     """,
+    # One-off: before merges were recognised, a merge locked the survivor's thumbnail as if the user had picked it.
+    """
+    UPDATE shares SET thumbnail_locked = 0, thumb_updated_at = NULL
+        WHERE character_id IN (SELECT merged_into FROM characters WHERE merged_into > 0);
+    """,
 ]
 
 

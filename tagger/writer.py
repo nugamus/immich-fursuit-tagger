@@ -128,6 +128,9 @@ class Writer:
             if targets:
                 into = max(targets, key=targets.get)
                 self.db.execute("UPDATE characters SET merged_into = ? WHERE id = ?", (into, c["id"]))
+                # A merge bumps the survivor's updatedAt like a manual thumbnail pick would; re-evaluate, don't lock.
+                self.db.execute("UPDATE shares SET thumbnail_locked = 0, thumb_updated_at = NULL WHERE character_id = ?",
+                                (into,))
                 # unwritten detections and references follow, so future photos of either view match `into`
                 self.db.execute("UPDATE detections SET character_id = ? WHERE character_id = ? AND status = 'assigned'",
                                 (into, c["id"]))
