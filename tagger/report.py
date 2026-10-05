@@ -46,8 +46,8 @@ def build(cfg: Config, db: sqlite3.Connection) -> str:
     }
     out = [f"<!doctype html><meta charset=utf-8><title>Fursuit tagger dry run</title><style>{CSS}</style>",
            "<h1>Fursuit tagger dry run</h1>",
-           f"<p>MIN_SCORE {cfg.min_score} · MAX_DISTANCE {cfg.max_distance} · MIN_FACES {cfg.min_faces} · "
-           f"REF_QUALITY_MIN {cfg.ref_quality_min} · BURST {cfg.burst_window_min} min / +{cfg.burst_margin}</p>",
+           f"<p>MIN_SCORE {cfg.min_score} · MAX_DISTANCE {cfg.max_distance} · CLUSTER_EPS {cfg.cluster_eps} · "
+           f"MIN_FACES {cfg.min_faces} · REF_SCORE_MIN {cfg.ref_score_min} · REF_QUALITY_MIN {cfg.ref_quality_min} · BURST {cfg.burst_window_min} min / +{cfg.burst_margin}</p>",
            "<p>Green outline = reference crop, dashed orange = assigned via burst context. Click a crop to open the photo.</p>",
            "<table>" + "".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k, v in stats.items()) + "</table>"]
 
