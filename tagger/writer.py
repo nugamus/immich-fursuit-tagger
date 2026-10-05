@@ -1,5 +1,5 @@
-"""Write side (PLAN.md section 7, Option A): one Immich person group per character, shared with every configured
-user; MANUAL faces on each asset written by the asset owner's key; the fursuit tag; best thumbnails; undo.
+"""Write side: one Immich person group per character, shared with everyone in the owner's cluster group; MANUAL
+faces written by each photo owner's key; the fursuit tag; best thumbnails; undo.
 
 Every ID the tagger creates is stored, so passes are idempotent and `undo` removes exactly what we made.
 """
@@ -30,7 +30,7 @@ def now() -> str:
 # --- safety ----------------------------------------------------------------------------------------
 
 def guard(cfg: Config, clients: dict[str, Immich]) -> str | None:
-    """None if writing is safe, else the reason to stay read-only (PLAN.md 8.1)."""
+    """None if writing is safe, else the reason to stay read-only."""
     any_client = next(iter(clients.values()))
     major, minor, patch, pre = any_client.version()
     version = (major, minor, patch, 99 if pre is None else pre)  # a release sorts after its RCs
@@ -70,7 +70,7 @@ class Writer:
         self.owners = _owner_labels(db)               # immich user id -> label
         self.ids = {v: k for k, v in self.owners.items()}  # label -> immich user id
 
-    # --- reconcile what the user changed in Immich (PLAN.md 7.1: Immich edits are the ground truth) ---
+    # --- reconcile what the user changed in Immich (edits made in Immich always win) -----------------
     def reconcile(self) -> dict:
         """Read back every tagger face and person and follow the user's edits:
         - face deleted or un-assigned        -> detection rejected for good

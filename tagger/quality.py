@@ -1,4 +1,4 @@
-"""Crop quality in [0, 1]: geometric mean of detector confidence, crop size and sharpness (PLAN.md 5.5)."""
+"""Crop quality in [0, 1]: geometric mean of detector confidence, crop size and sharpness."""
 
 import numpy as np
 from PIL import Image

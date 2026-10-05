@@ -342,7 +342,6 @@ source = { virtual = "." }
 dependencies = [
     { name = "numpy" },
     { name = "pillow" },
-    { name = "pyyaml" },
     { name = "requests" },
 ]
 
@@ -383,7 +382,6 @@ requires-dist = [
     { name = "onnxruntime-gpu", marker = "extra == 'cuda'", specifier = ">=1.23" },
     { name = "onnxruntime-openvino", marker = "extra == 'openvino'", specifier = ">=1.23" },
     { name = "pillow", specifier = ">=11" },
-    { name = "pyyaml", specifier = ">=6" },
     { name = "requests", specifier = ">=2.32" },
     { name = "rfdetr", extras = ["onnx"], marker = "extra == 'exporter'", specifier = "==1.8.3" },
     { name = "torch", marker = "extra == 'exporter'", specifier = "==2.12.1", index = "https://download.pytorch.org/whl/cpu" },

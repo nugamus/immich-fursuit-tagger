@@ -1,4 +1,4 @@
-"""Read side of the pipeline (PLAN.md section 5): per-user access scan, detect, score, embed, recognize.
+"""Read side of the pipeline: per-user access scan, detect, score, embed, recognize.
 Writes only to state.sqlite and the crop cache; nothing here touches Immich beyond reads."""
 
 import logging

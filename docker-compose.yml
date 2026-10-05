@@ -1,0 +1,43 @@
+name: immich-fursuit-tagger
+
+services:
+  # Downloads the published checkpoints and converts them to ONNX once. Re-runs are no-ops until a model changes.
+  exporter:
+    image: ghcr.io/nugamus/immich-fursuit-tagger:exporter
+    environment:
+      HF_TOKEN: ${HF_TOKEN}
+    volumes:
+      - ./models:/models
+    restart: "no"
+
+  tagger:
+    # :openvino for Intel CPUs/iGPUs, :cuda for NVIDIA (see docker-compose.gpu.yml), :cpu for everything else
+    image: ghcr.io/nugamus/immich-fursuit-tagger:openvino
+    depends_on:
+      exporter:
+        condition: service_completed_successfully
+    environment:
+      IMMICH_URL: ${IMMICH_URL:-http://immich-server:2283}
+      API_KEYS: ${API_KEYS}
+      INFERENCE_DEVICE: auto
+      TZ: ${TZ:-UTC}
+    devices:
+      - /dev/dri:/dev/dri   # Intel iGPU; remove this line if the host has none
+    volumes:
+      - ./models:/models
+      - ./data:/data
+    networks:
+      - immich
+    deploy:
+      resources:
+        limits:
+          cpus: "3"
+          memory: 3G
+    restart: unless-stopped
+
+networks:
+  # Join Immich's network so the tagger can reach http://immich-server:2283.
+  # Check the name with `docker network ls`; if Immich is elsewhere, drop this and set IMMICH_URL instead.
+  immich:
+    name: immich_default
+    external: true

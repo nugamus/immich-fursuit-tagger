@@ -32,7 +32,7 @@ def _face_crop(client: Immich, asset_id: str, f: dict):
 
 
 def face_score(crop) -> float:
-    """Bigger, well-exposed, sharp faces win. Size alone picked a nearly black frame (M4 review)."""
+    """Bigger, well-exposed, sharp faces win. Size alone tends to pick dark or blurry frames."""
     from PIL import ImageStat
 
     from tagger.quality import sharpness

@@ -1,4 +1,4 @@
-"""ONNX vs PyTorch parity (M1). Needs the exporter extra plus exported models; skipped otherwise.
+"""ONNX vs PyTorch parity. Needs the exporter extra plus exported models; skipped otherwise.
 
     MODELS_DIR=work/models SAMPLES_DIR=work/samples CKPT_DIR=work/ckpt uv run pytest tests/test_parity.py -s
 """

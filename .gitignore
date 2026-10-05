@@ -1,10 +1,8 @@
-.env.test
 .env
-.playwright-mcp/
+.env.test
+.venv/
 __pycache__/
-models/
-work/
-*.yml.snapshot
-/zs*.yml
-/custom.yml
-/home.yml
+/work/
+/models/
+/data/
+.playwright-mcp/

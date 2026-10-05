@@ -1,4 +1,4 @@
-"""`tagger` CLI. Subcommands are added milestone by milestone (see PLAN.md section 11)."""
+"""`tagger` command line."""
 
 import argparse
 import logging
@@ -266,7 +266,6 @@ def main(argv=None) -> int:
     p.add_argument("--limit", type=int, default=20)
     p.set_defaults(func=bench)
     p = sub.add_parser("scan", help="one read-only pass: access scan, detect, embed, recognize (no Immich writes)")
-    p.add_argument("--once", action="store_true", help="accepted for PLAN.md compatibility; scan always runs once")
     p.add_argument("--album", action="append", help="limit to this album ID (repeatable)")
     p.add_argument("--limit", type=int, help="process at most N assets")
     p.set_defaults(func=scan)

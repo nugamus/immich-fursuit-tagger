@@ -1,4 +1,4 @@
-"""SQLite state (PLAN.md section 9). WAL mode; migrations keyed on PRAGMA user_version."""
+"""SQLite state. WAL mode; migrations keyed on PRAGMA user_version."""
 
 import sqlite3
 from pathlib import Path

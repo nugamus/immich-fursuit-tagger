@@ -1,4 +1,4 @@
-"""Gallery matching, burst tiebreak and pending-pool clustering (PLAN.md section 6). Embeddings are L2-normalized,
+"""Gallery matching, burst tiebreak and pending-pool clustering. Embeddings are L2-normalized,
 so cosine distance = 1 - dot product. Brute-force numpy; swap in sqlite-vec behind these functions if it gets big."""
 
 from collections import Counter
@@ -91,7 +91,7 @@ def split_conflicts(embeddings: np.ndarray, groups: np.ndarray, labels: np.ndarr
 
 def dbscan(embeddings: np.ndarray, eps: float, min_samples: int) -> np.ndarray:
     """Cosine DBSCAN. Returns a cluster label per row, -1 for noise. min_samples counts the point itself.
-    ponytail: O(n^2) distance matrix; fine for a few thousand pending crops, use an ANN index beyond that."""
+    O(n^2) distance matrix: fine for a few thousand pending crops, an ANN index would be needed well beyond that."""
     n = len(embeddings)
     labels = np.full(n, -1)
     if n == 0:

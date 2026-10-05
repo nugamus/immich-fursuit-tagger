@@ -1,4 +1,4 @@
-"""Minimal Immich API client, one instance per user API key. Endpoints verified in NOTES.md (M0)."""
+"""Small Immich API client, one instance per user API key."""
 
 import io
 import logging
@@ -91,7 +91,8 @@ class Immich:
         return self.get(f"/assets/{asset_id}/edits").get("edits", [])
 
     def preview(self, asset_id: str, edited: bool) -> Image.Image:
-        """The preview Immich gives its own ML (1920 px long side). Edited assets need edited=true (see NOTES.md)."""
+        """The preview Immich feeds its own ML (1920 px long side). For edited photos Immich expects face boxes in
+        edited-preview coordinates, so those are fetched with edited=true."""
         r = self._request("GET", f"/assets/{asset_id}/thumbnail",
                           params={"size": "preview", "edited": "true" if edited else "false"})
         img = Image.open(io.BytesIO(r.content))

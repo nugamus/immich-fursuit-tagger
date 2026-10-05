@@ -1,4 +1,4 @@
-"""Self-contained HTML dry-run report for threshold review (M3)."""
+"""Self-contained HTML report for reviewing recognition results and thresholds."""
 
 import base64
 import html
