@@ -72,8 +72,13 @@ def build(cfg: Config, db: sqlite3.Connection) -> str:
         out += [_card(cfg, d) for d in dets]
         out.append("</div>")
 
-    pending = q("SELECT * FROM detections WHERE status = 'pending' ORDER BY quality DESC LIMIT 300")
+    pending = q("SELECT * FROM detections WHERE status = 'pending' AND (distance IS NULL OR distance <= 0.5) "
+                "ORDER BY quality DESC LIMIT 300")
     out.append(f"<h2>Pending (unassigned) — top {len(pending)} by quality</h2><div class=grid>")
     out += [_card(cfg, d) for d in pending]
     out.append("</div>")
+    # Far from every character: mostly detector false positives (animals, human faces). Never written to Immich.
+    far = q("SELECT * FROM detections WHERE status = 'pending' AND distance > 0.5 ORDER BY quality DESC")
+    out.append(f"<details><summary><b>Probably not a fursuit — {len(far)} (click to show)</b></summary>"
+               "<div class=grid>" + "".join(_card(cfg, d) for d in far) + "</div></details>")
     return "\n".join(out)
