@@ -3,7 +3,7 @@ name = "immich-fursuit-tagger"
 version = "0.1.0"
 description = "Sidecar that tags fursuit characters in Immich People"
 license = "AGPL-3.0-only"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "numpy>=2.1",
     "pillow>=11",
