@@ -1,0 +1,7 @@
+.venv/
+work/
+models/
+.env*
+.git/
+.playwright-mcp/
+**/__pycache__/

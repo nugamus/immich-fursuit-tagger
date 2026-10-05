@@ -1,0 +1,6 @@
+.env.test
+.env
+.playwright-mcp/
+__pycache__/
+models/
+work/

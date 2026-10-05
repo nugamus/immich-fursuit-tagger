@@ -1,0 +1,47 @@
+[project]
+name = "immich-fursuit-tagger"
+version = "0.1.0"
+description = "Sidecar that tags fursuit characters in Immich People"
+license = "AGPL-3.0-only"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "numpy>=2.1",
+    "pillow>=11",
+]
+
+[project.optional-dependencies]
+cpu = ["onnxruntime>=1.23"]
+openvino = ["onnxruntime-openvino>=1.23"]
+cuda = ["onnxruntime-gpu>=1.23"]
+# One-shot model exporter (PyTorch). Pinned to the versions the reference fork was validated with.
+exporter = [
+    "rfdetr[onnx]==1.8.3",
+    "torch==2.12.1",
+    "torchvision",
+    "transformers==5.13.0",
+    "huggingface_hub>=0.34",
+    "onnx>=1.18",
+    "onnxruntime>=1.23",
+]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.uv]
+conflicts = [[{ extra = "cpu" }, { extra = "openvino" }, { extra = "cuda" }]]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
+
+[tool.setuptools.packages.find]
+include = ["tagger*", "exporter*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
