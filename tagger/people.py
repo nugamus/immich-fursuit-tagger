@@ -24,18 +24,41 @@ def _people(client: Immich) -> list[dict]:
         page += 1
 
 
-def _largest_face(client: Immich, person_id: str) -> tuple[str, float, int] | None:
-    """(asset_id, face width as a fraction of the image, face width in original pixels) of the person's biggest face."""
-    best = None
+def _face_crop(client: Immich, asset_id: str, f: dict):
+    img = client.preview(asset_id, edited=True)
+    sx, sy = img.width / f["imageWidth"], img.height / f["imageHeight"]
+    return img.crop((int(f["boundingBoxX1"] * sx), int(f["boundingBoxY1"] * sy),
+                     int(f["boundingBoxX2"] * sx), int(f["boundingBoxY2"] * sy)))
+
+
+def face_score(crop) -> float:
+    """Bigger, well-exposed, sharp faces win. Size alone picked a nearly black frame (M4 review)."""
+    from PIL import ImageStat
+
+    from tagger.quality import sharpness
+
+    brightness = ImageStat.Stat(crop.convert("L")).mean[0]
+    exposure = max(0.05, min(1.0, brightness / 90.0)) * max(0.05, min(1.0, (255 - brightness) / 60.0))
+    s = sharpness(crop)
+    return min(crop.width, 400) * exposure * (s / (s + 100.0))
+
+
+def _best_face(client: Immich, person_id: str) -> tuple[str, float, int] | None:
+    """(asset_id, largest face width as a fraction of the photo, number of photos) for the best-looking face."""
+    best, largest, n = None, 0.0, 0
     for asset in client.search_assets({"personIds": {"all": [person_id]}}):
+        n += 1
         for f in client.get("/faces", id=asset["id"]):
             if (f.get("person") or {}).get("id") != person_id or not f["imageWidth"]:
                 continue
-            frac = (f["boundingBoxX2"] - f["boundingBoxX1"]) / f["imageWidth"]
-            px = int(frac * (asset.get("width") or f["imageWidth"]))
-            if best is None or px > best[2]:
-                best = (asset["id"], frac, px)
-    return best
+            largest = max(largest, (f["boundingBoxX2"] - f["boundingBoxX1"]) / f["imageWidth"])
+            try:
+                score = face_score(_face_crop(client, asset["id"], f))
+            except (ImmichError, OSError):
+                continue
+            if best is None or score > best[1]:
+                best = (asset["id"], score)
+    return (best[0], largest, n) if best else None
 
 
 def tidy(db: sqlite3.Connection, label: str, client: Immich, hide_below: float, dry_run: bool) -> dict:
@@ -46,35 +69,44 @@ def tidy(db: sqlite3.Connection, label: str, client: Immich, hide_below: float, 
     for p in _people(client):
         if p["id"] in ours:
             continue
-        best = _largest_face(client, p["id"])
-        if best is None:
-            continue
-        asset_id, frac, _ = best
-        row = db.execute("SELECT asset_id, updated_at FROM human_thumbs WHERE person_id = ? AND user_label = ?",
-                         (p["id"], label)).fetchone()
-        # We recorded the person's updatedAt right after our own change; a newer one means the user edited it.
-        user_touched = row is not None and row[1] != p.get("updatedAt")
-        if user_touched:
+        row = db.execute("SELECT asset_id, updated_at, name, n_assets, largest, locked FROM human_thumbs "
+                         "WHERE person_id = ? AND user_label = ?", (p["id"], label)).fetchone()
+        if row is not None and row["locked"]:
             stats["skipped_user_choice"] += 1
-        elif row is None or row[0] != asset_id:
-            if not dry_run:
-                try:
-                    client.put(f"/people/{p['id']}", {"featureFaceAssetId": asset_id})
-                    updated = client.get(f"/people/{p['id']}")  # GET's updatedAt format, as compared later
-                except ImmichError as e:
-                    log.warning("thumbnail for person %s: %s", p["id"], e)
-                    continue
-                db.execute("INSERT INTO human_thumbs(person_id, user_label, asset_id, updated_at) VALUES(?, ?, ?, ?) "
-                           "ON CONFLICT DO UPDATE SET asset_id = excluded.asset_id, updated_at = excluded.updated_at",
-                           (p["id"], label, asset_id, updated.get("updatedAt")))
-            stats["thumbnails"] += 1
-        if hide_below and frac < hide_below and not p["isHidden"] and not p["name"] and not user_touched:
-            if not dry_run:
+            continue
+        # We store the person's updatedAt right after each of our own changes. A newer one with the same name means
+        # the user picked a thumbnail (hands off for good); a newer one with a new name is just a rename.
+        if row is not None and row["updated_at"] != p.get("updatedAt") and row["name"] == p["name"]:
+            db.execute("UPDATE human_thumbs SET locked = 1 WHERE person_id = ? AND user_label = ?", (p["id"], label))
+            stats["skipped_user_choice"] += 1
+            continue
+        n_now = sum(1 for _ in client.search_assets({"personIds": {"all": [p["id"]]}}))
+        if row is not None and row["n_assets"] == n_now:
+            asset_id, frac = row["asset_id"], row["largest"] or 0  # nothing new: skip the per-face scoring
+        else:
+            best = _best_face(client, p["id"])
+            if best is None:
+                continue
+            asset_id, frac, _ = best
+        if dry_run:
+            stats["thumbnails"] += int(row is None or row["asset_id"] != asset_id)
+            continue
+        try:
+            if row is None or row["asset_id"] != asset_id:
+                client.put(f"/people/{p['id']}", {"featureFaceAssetId": asset_id})
+                stats["thumbnails"] += 1
+            if hide_below and frac < hide_below and not p["isHidden"] and not p["name"]:
                 client.put(f"/people/{p['id']}", {"isHidden": True})
-                updated = client.get(f"/people/{p['id']}")
-                db.execute("UPDATE human_thumbs SET updated_at = ? WHERE person_id = ? AND user_label = ?",
-                           (updated.get("updatedAt"), p["id"], label))
-            stats["hidden"] += 1
+                stats["hidden"] += 1
+            current = client.get(f"/people/{p['id']}")  # GET's updatedAt format, as compared next pass
+        except ImmichError as e:
+            log.warning("person %s: %s", p["id"], e)
+            continue
+        db.execute("INSERT INTO human_thumbs(person_id, user_label, asset_id, updated_at, name, n_assets, largest) "
+                   "VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO UPDATE SET asset_id = excluded.asset_id, "
+                   "updated_at = excluded.updated_at, name = excluded.name, n_assets = excluded.n_assets, "
+                   "largest = excluded.largest",
+                   (p["id"], label, asset_id, current.get("updatedAt"), current.get("name"), n_now, frac))
     return stats
 
 

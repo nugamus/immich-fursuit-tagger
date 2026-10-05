@@ -91,6 +91,12 @@ MIGRATIONS = [
     """
     CREATE TABLE person_shares (character_id INTEGER NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (character_id, user_id));
     """,
+    """
+    ALTER TABLE human_thumbs ADD COLUMN n_assets INTEGER;
+    ALTER TABLE human_thumbs ADD COLUMN largest REAL;
+    ALTER TABLE human_thumbs ADD COLUMN name TEXT;
+    ALTER TABLE human_thumbs ADD COLUMN locked INTEGER NOT NULL DEFAULT 0;
+    """,
 ]
 
 
