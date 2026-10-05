@@ -117,17 +117,24 @@ class Writer:
         return created
 
     def share_people(self) -> None:
+        """Share every character with all configured users and everyone else in the owner's cluster group
+        (people who only view shared albums need no API key, just cluster-group membership)."""
+        members: dict[str, list[str]] = {}
         for c in self.db.execute("SELECT id, person_group_id, owner_label FROM characters "
                                  "WHERE person_group_id IS NOT NULL AND merged_into IS NULL").fetchall():
-            others = [lab for lab in self.ids if lab != c["owner_label"]]
-            missing = [lab for lab in others if not self.db.execute(
-                "SELECT 1 FROM shares WHERE character_id = ? AND user_label = ?", (c["id"], lab)).fetchone()]
+            owner = c["owner_label"]
+            if owner not in members:
+                members[owner] = self.clients[owner].cluster_members() or []
+            targets = ({self.ids[lab] for lab in self.ids} | set(members[owner])) - {self.ids[owner]}
+            done = {r[0] for r in self.db.execute("SELECT user_id FROM person_shares WHERE character_id = ?", (c["id"],))}
+            missing = sorted(targets - done)
             if not missing or self.cfg.dry_run:
                 continue
-            self.clients[c["owner_label"]].put("/people/users", {
-                "personIds": [c["person_group_id"]], "sharedWithIds": [self.ids[lab] for lab in missing], "role": "write"})
-            self.db.executemany("INSERT OR IGNORE INTO shares(character_id, user_label) VALUES(?, ?)",
-                                [(c["id"], lab) for lab in missing])
+            self.clients[owner].put("/people/users", {
+                "personIds": [c["person_group_id"]], "sharedWithIds": missing, "role": "write"})
+            self.db.executemany("INSERT OR IGNORE INTO person_shares(character_id, user_id) VALUES(?, ?)",
+                                [(c["id"], u) for u in missing])
+            log.info("character %d shared with %d user(s)", c["id"], len(missing))
 
     # --- faces -------------------------------------------------------------------------------------
     def write_faces(self) -> dict:
@@ -306,6 +313,7 @@ def undo(cfg: Config, db: sqlite3.Connection, clients: dict[str, Immich], since:
             db.execute("UPDATE characters SET person_group_id = NULL, owner_label = NULL, person_created_at = NULL "
                        "WHERE id = ?", (p["id"],))
             db.execute("DELETE FROM shares WHERE character_id = ?", (p["id"],))
+            db.execute("DELETE FROM person_shares WHERE character_id = ?", (p["id"],))
         stats["people"] += 1
 
     if since == "0000" and not user:

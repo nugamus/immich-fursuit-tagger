@@ -51,7 +51,10 @@ class Config:
     overlap_iou: float = field(default_factory=lambda: float(_env("OVERLAP_IOU", "0.5")))
     tag_name: str = field(default_factory=lambda: _env("TAG_NAME", "fursuit"))
     allow_untested_immich: bool = field(default_factory=lambda: _env("ALLOW_UNTESTED_IMMICH", "false").lower() == "true")
-    scan_interval_min: float = field(default_factory=lambda: float(_env("SCAN_INTERVAL_MIN", "30")))
+    # Full pass at least this often (picks up edits made in Immich); new photos trigger a pass sooner.
+    scan_interval_min: float = field(default_factory=lambda: float(_env("SCAN_INTERVAL_MIN", "60")))
+    # How often to cheaply check whether any user's photos changed (one tiny request per user).
+    poll_interval_sec: float = field(default_factory=lambda: float(_env("POLL_INTERVAL_SEC", "120")))
 
     dry_run: bool = field(default_factory=lambda: _env("DRY_RUN", "false").lower() == "true")
 

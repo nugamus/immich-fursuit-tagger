@@ -140,6 +140,7 @@ def run(args) -> int:
     log = logging.getLogger("run")
     cfg, db, clients = _context()
     models = Models(cfg.models_dir, device=cfg.inference_device, threads=cfg.threads, ttl_min=cfg.model_ttl_min)
+    seen = None
     while True:
         reason = None
         try:
@@ -153,10 +154,22 @@ def run(args) -> int:
                 "last_success": datetime.now(timezone.utc).isoformat(), "read_only": reason}))
         except Exception:  # keep the loop alive; health goes stale and the container turns unhealthy
             log.exception("pass failed")
+        # Idle until photos change (cheap probe) or the periodic full pass is due. Models are only loaded when
+        # there is something to process and are released after MODEL_TTL_MIN idle, freeing RAM for Immich.
         deadline = time.monotonic() + cfg.scan_interval_min * 60
         while time.monotonic() < deadline:
+            time.sleep(cfg.poll_interval_sec)
             models.release_if_idle()
-            time.sleep(30)
+            try:
+                now_seen = {label: c.activity() for label, c in clients.items()}
+            except Exception as e:  # Immich restarting etc.: just try again next poll
+                log.debug("activity probe failed: %s", e)
+                continue
+            if seen is not None and now_seen != seen:
+                log.info("new or removed photos detected; starting a pass")
+                seen = now_seen
+                break
+            seen = now_seen
 
 
 def health(args) -> int:

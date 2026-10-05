@@ -81,7 +81,8 @@ def tidy(db: sqlite3.Connection, label: str, client: Immich, hide_below: float, 
 def share_all(clients: dict[str, Immich], ids: dict[str, str], dry_run: bool) -> None:
     """Share each user's people with every other configured user (write role, same cluster group required)."""
     for label, client in clients.items():
-        others = [uid for other, uid in ids.items() if other != label]
+        group = client.cluster_members() or []
+        others = sorted(({uid for uid in ids.values()} | set(group)) - {ids[label]})
         if others and not dry_run:
             try:
                 client.put("/people/users", {"type": "everyone", "sharedWithIds": others, "role": "write"})

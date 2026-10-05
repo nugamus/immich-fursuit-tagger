@@ -88,6 +88,9 @@ MIGRATIONS = [
     ALTER TABLE asset_tags ADD COLUMN written_at TEXT;
     CREATE TABLE tags (user_label TEXT PRIMARY KEY, tag_id TEXT NOT NULL, created INTEGER NOT NULL DEFAULT 0);
     """,
+    """
+    CREATE TABLE person_shares (character_id INTEGER NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (character_id, user_id));
+    """,
 ]
 
 

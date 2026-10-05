@@ -46,6 +46,21 @@ class Immich:
     def me(self) -> dict:
         return self.get("/users/me")
 
+    def cluster_members(self) -> list[str] | None:
+        """User ids in the key owner's cluster group, or None if the key lacks clusterGroup.read."""
+        try:
+            return [u["id"] for u in self.get(f"/cluster-groups/{self.me()['clusterGroupId']}/users")]
+        except ImmichError:
+            return None
+
+    def activity(self) -> tuple[int, str | None]:
+        """Cheap fingerprint of what this user can see: (asset count, newest photo date). A change means new,
+        deleted or restored photos. One small request."""
+        r = self.post("/search/metadata", {"size": 1, "filter": {"type": {"eq": "IMAGE"}, "trashedAt": {"eq": None}},
+                                           "orderBy": {"field": "fileCreatedAt", "direction": "desc"}})["assets"]
+        newest = r["items"][0]["fileCreatedAt"] if r["items"] else None
+        return r.get("total", len(r["items"])), newest
+
     # --- asset selection ---------------------------------------------------------------------
     def search_assets(self, extra_filter: dict | None = None, page_size: int = 500) -> Iterator[dict]:
         """All non-trashed images visible to the key's user via /search/metadata (Immich >= 3.2 filter format)."""
