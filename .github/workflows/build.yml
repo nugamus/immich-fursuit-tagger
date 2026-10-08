@@ -52,7 +52,7 @@ jobs:
             type=raw,value=${{ matrix.flavor }},enable={{is_default_branch}}
             type=sha,prefix=${{ matrix.flavor }}-
             type=semver,pattern={{version}},suffix=-${{ matrix.flavor }}
-      - uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v7
         with:
           context: .
           target: ${{ matrix.target }}
